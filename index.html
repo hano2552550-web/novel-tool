@@ -472,13 +472,13 @@ const RULES = [
     desc:'「AのBのCのD」のように「の」が3回以上続いている箇所です。' },
   { id:'verbose', label:'冗長な表現', level:'info', safe:false, custom:checkVerbose,
     desc:'「〜することができる」など、短くできるかもしれない表現です。' },
-  { id:'openKanji', label:'ひらがなにするのが一般的な漢字', level:'info', safe:false, custom:checkOpenKanji, defaultOff:true,
+  { id:'openKanji', label:'ひらがなにするのが一般的な漢字', level:'info', safe:false, custom:checkOpenKanji,
     desc:'「〜して下さい」「〜する事」など、補助動詞・形式名詞はひらがなで書くのが一般的です。' },
   { id:'paraHead', label:'段落の書き出しの重複', level:'info', safe:false, custom:checkParaHead,
     desc:'同じ書き出し（「彼女は」など）の段落が3回以上続いている箇所です。' },
   { id:'kosoado', label:'指示語（こそあど）の多用', level:'info', safe:false, custom:checkKosoado,
     desc:'1文に「これ・それ・あの」などの指示語が3つ以上ある箇所です。' },
-  { id:'commas', label:'読点の多すぎ・なさすぎ', level:'info', safe:false, custom:checkCommas, defaultOff:true,
+  { id:'commas', label:'読点の多すぎ・なさすぎ', level:'info', safe:false, custom:checkCommas,
     desc:'読点が5つ以上ある文と、70字以上あるのに読点がない文です。' },
   { id:'widthMix', label:'全角・半角の混在', level:'info', safe:false, custom:checkWidthMix,
     desc:'英字・数字・丸括弧で、全角と半角が混在している箇所（少ないほう）です。' },
@@ -1085,6 +1085,8 @@ if (typeof module !== 'undefined') module.exports = {analyzeText, webHtmlToText,
   try { settings = {...defaults, ...JSON.parse(localStorage.getItem(LS_KEY) || '{}')}; } catch(e) {}
   // 初めて見るチェック項目のうち、標準でオフのものはオフにしておく
   settings.seenRules = settings.seenRules || [];
+  // 一時期「標準でオフ」にしていた項目を、標準でオンに戻す（1回だけ）
+  if (!settings.reenabledV1) { settings.disabled = settings.disabled.filter(id => id !== 'openKanji' && id !== 'commas'); settings.reenabledV1 = true; }
   for (const r of RULES) if (!settings.seenRules.includes(r.id)) { settings.seenRules.push(r.id); if (r.defaultOff && !settings.disabled.includes(r.id)) settings.disabled.push(r.id); }
   const storageFail = (what, e) => notify('warn', `${what}を保存できませんでした`, {cause: e && e.name === 'QuotaExceededError' ? 'ブラウザの保存容量がいっぱいです' : 'ブラウザの設定（プライベートモード、サイトデータの保存禁止など）で保存が許可されていない可能性があります（' + errText(e) + '）', fix: 'ブラウザの設定でこのサイトのデータ保存を許可してください。作品メモは「.txtで書き出す」で保存できます。'});
   const save = () => { try { localStorage.setItem(LS_KEY, JSON.stringify(settings)); } catch(e) { storageFail('設定', e); } };
