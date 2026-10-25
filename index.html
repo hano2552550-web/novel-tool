@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<!-- 安全のため：このページは外部へ一切通信できないように設定しています。
+<!-- 安全のため：このページ自身は、本文を外部へ送る通信が一切できないように設定しています。
      例外は、同じサイトに置いた「詳細チェック」用のワーカー（deep/）が辞書ファイルを読み込むことだけで、本文は送信しません。 -->
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; worker-src 'self'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'">
 <title>小説 整形・校正ツール</title>
@@ -185,7 +185,7 @@ ul.items li:hover{background:var(--btn)}
   <div class="memo-foot">
     <span id="memoStatus" class="memo-status"></span>
     <label class="row"><input type="checkbox" id="memoToAi"> 「AI校正用にコピー」のときにメモを添える</label>
-    <span class="desc">【人物】【用語】に書いた名前の表記ゆれと、【言い換え】に書いた誤りを校正チェックで指摘します。</span>
+    <span class="desc">【人物】【用語】に書いた名前の表記ゆれ・打ち間違い、【言い換え】に書いた誤り、【チェック】に書いた言葉を、校正チェックで指摘します。</span>
   </div>
 </details>
 
@@ -969,7 +969,7 @@ function analyzeText(t){
   // よく使う言葉（漢字2字以上・カタカナ2字以上・くり返しが気になりやすい言葉）
   const words = {};
   for (const m of t.matchAll(/[一-龠々]{2,}|[ァ-ヺー]{2,}/g)) words[m[0]] = (words[m[0]] || 0) + 1;
-  for (const [w] of REPEAT_WORDS) { const n = (t.match(new RegExp(w, 'g')) || []).length; if (n) words[w] = n; }
+  for (const [w, neg, head] of REPEAT_WORDS) { const n = (t.match(new RegExp((head ? '(?<=^|[。、！？「『\\n\\u3000 ])' : '') + w + (neg ? '(?!' + neg + ')' : ''), 'g')) || []).length; if (n) words[w] = n; }
   const top = (o, n) => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, n);
   // 章ごとの文字数
   const chapters = []; let curName = '（はじめ）', curLen = 0;
@@ -1361,7 +1361,7 @@ if (typeof module !== 'undefined') module.exports = {analyzeText, webHtmlToText,
     if (!text.trim() && html && !fromNotion && /\n[ \t　]*\n/.test(normalizeNewlines(plain || ''))) {
       // pixivなどのWebページからのコピー：段落と改行・空行をそのまま保つ
       let w = null; try { w = webHtmlToText(html, new DOMParser()); } catch(err) { w = null; }
-      if (w && w.trim()) { text = w; exact = true; msg = /pixiv/i.test(html) || /\[chapter:/.test(w) ? 'pixivの本文の改行・空行をそのまま再現して貼り付けました' : 'ページの改行・空行をそのまま再現して貼り付けました'; }
+      if (w && w.trim()) { text = w; exact = true; msg = '改行・空行をそのまま再現して貼り付けました'; }
     }
     if (!text.trim() && html) {
       try { text = htmlToText(html, new DOMParser()); } catch(err) { text = ''; }
@@ -1550,7 +1550,7 @@ if (typeof module !== 'undefined') module.exports = {analyzeText, webHtmlToText,
     if (lastChecked) { const tm = document.createElement('span'); tm.className = 'checked-at'; tm.textContent = ta.value.length > 60000 ? `${lastCheckedAt} 時点（長い本文のため、直したあとは「校正チェック」を押して更新してください）` : `${lastCheckedAt} 時点（本文を直すと自動で更新されます）`; $('summary').append(tm); }
     if (!lastChecked) return;
     const hint = document.createElement('div'); hint.className = 'ai-hint';
-    hint.textContent = '💡 このチェックは決まった形のものだけを見つける一次チェックです。誤字・脱字・変換ミス・文法の誤りは、仕上げに「🤖 AI校正用にコピー」でAIに確認してもらいましょう（結果の「行」は上の「行へ移動」で探せます）。';
+    hint.textContent = '💡 このチェックは決まった形・辞書で判定できるものを見つける一次チェックです。文脈しだいの変換ミスや文法・文のつながりの誤りは、仕上げに「🤖 AI校正用にコピー」でAIに確認してもらいましょう（結果の「行」は上の「行へ移動」で探せます）。';
     if (!total) { const p = document.createElement('p'); p.className = 'empty'; p.textContent = 'ルールで見つかる問題はありませんでした。'; box.append(p, hint); return; }
     const starts = lineStarts(t);
     for (const g of groups) {
