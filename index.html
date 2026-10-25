@@ -1,0 +1,1159 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<!-- 安全のため：このページは外部へ一切通信できないように設定しています -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'">
+<title>小説 整形・校正ツール</title>
+<style>
+:root{
+  --bg:#f6f5f2; --panel:#ffffff; --text:#222; --muted:#6b6b6b; --line:#dedbd4;
+  --accent:#0096fa; --accent-text:#fff; --warn:#c0392b; --info:#8a6d1f; --mark:#ffe58a;
+  --btn:#eceae5; --btn-hover:#e0ddd6;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#1b1c1e; --panel:#242528; --text:#e8e6e3; --muted:#a09d97; --line:#3a3b3f;
+    --accent:#2ea8ff; --accent-text:#fff; --warn:#ff7a6b; --info:#e0c070; --mark:#6b5a12;
+    --btn:#323338; --btn-hover:#3c3d43;
+  }
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,"Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;font-size:14px;display:flex;flex-direction:column}
+header{padding:12px 16px 4px}
+header h1{font-size:18px;margin:0 0 2px}
+header p{margin:0;color:var(--muted);font-size:12px}
+header a{color:var(--accent)}
+.toolbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:8px 16px}
+button{font:inherit;border:1px solid var(--line);background:var(--btn);color:var(--text);padding:7px 12px;border-radius:8px;cursor:pointer}
+button:hover{background:var(--btn-hover)}
+button.primary{background:var(--accent);color:var(--accent-text);border-color:var(--accent);font-weight:600}
+button.small{padding:2px 8px;font-size:12px}
+#count{color:var(--muted);font-size:12px;margin-left:auto}
+details.settings{margin:0 16px 8px;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:8px 12px}
+details.settings summary{cursor:pointer;font-weight:600}
+.setgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px 18px;margin-top:10px}
+.setgrid label{display:flex;flex-direction:column;gap:4px;font-size:13px}
+.setgrid label.row{flex-direction:row;align-items:center;gap:6px}
+select,input[type=number]{font:inherit;padding:4px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text)}
+.memo-bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0 8px;font-size:13px}
+.memo-sep{flex:1}
+.memo-status{width:100%;font-size:12px;font-weight:600}
+.memo-status.ok{color:#2e9d5b}.memo-status.ng{color:var(--warn)}.memo-status.idle{color:var(--muted);font-weight:400}
+@media (prefers-color-scheme: dark){.memo-status.ok{color:#4fd18b}}
+.goto{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:2px 0 8px;font-size:12px}
+.goto input{width:6em;font:inherit;padding:2px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text)}
+.goto .desc{margin:0;width:100%}
+.ai-hint{margin-top:12px;padding:8px 10px;border:1px dashed var(--line);border-radius:8px;font-size:12px;color:var(--muted)}
+.memo-badge{font-weight:400;color:var(--muted);font-size:12px;margin-left:8px}
+#memoText{width:100%;min-height:160px;resize:vertical;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);padding:10px 12px;font:inherit;line-height:1.7}
+.memo-foot{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center;margin-top:6px;font-size:13px}
+.memo-foot label.row{display:flex;gap:6px;align-items:center}
+main{flex:1;display:flex;gap:12px;padding:0 16px 16px;min-height:0}
+.editor{flex:1.6;display:flex;min-width:0}
+textarea#ta{flex:1;width:100%;resize:none;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text);padding:14px 16px;font-size:15px;line-height:1.8;font-family:"Hiragino Mincho ProN","Yu Mincho","YuMincho",serif}
+textarea#ta:focus{outline:2px solid var(--accent);outline-offset:-1px}
+aside{flex:1;min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:auto;padding:10px 12px}
+#summary{font-weight:600;margin-bottom:6px;border-radius:6px;padding:2px 4px;margin-left:-4px}
+#summary .checked-at{display:block;font-weight:400;font-size:11px;color:var(--muted)}
+#summary.flash{animation:flash 1s ease-out}
+@keyframes flash{0%{background:var(--mark)}100%{background:transparent}}
+details.rules{margin-bottom:8px}
+details.rules summary{cursor:pointer;color:var(--muted);font-size:12px}
+#rules{display:grid;grid-template-columns:1fr;gap:2px;margin-top:6px;font-size:12px}
+#rules label{display:flex;gap:6px;align-items:center}
+.group{margin:10px 0 4px;font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px}
+.badge{font-size:11px;padding:1px 6px;border-radius:10px;border:1px solid currentColor}
+.lv-warn{color:var(--warn)} .lv-info{color:var(--info)}
+.desc{color:var(--muted);font-size:12px;margin:0 0 4px}
+ul.items{list-style:none;margin:0;padding:0}
+ul.items li{display:flex;gap:8px;align-items:flex-start;padding:5px 6px;border-radius:6px;cursor:pointer;border-bottom:1px dashed var(--line)}
+ul.items li:hover{background:var(--btn)}
+.ln{color:var(--muted);font-size:11px;min-width:34px;padding-top:2px}
+.snip{flex:1;font-family:"Hiragino Mincho ProN","Yu Mincho",serif;word-break:break-all}
+.snip mark{background:var(--mark);color:inherit;border-radius:2px;padding:0 1px}
+.empty{color:var(--muted);padding:8px 0}
+#toast{position:fixed;left:50%;top:16px;transform:translate(-50%,-12px);min-width:280px;max-width:min(560px,92vw);background:var(--panel);color:var(--text);border:2px solid var(--line);border-left-width:8px;border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,.18);padding:12px 40px 12px 14px;opacity:0;transition:opacity .2s,transform .2s;pointer-events:none;z-index:10;font-size:14px}
+#toast.show{opacity:1;transform:translate(-50%,0);pointer-events:auto}
+#toast .t-title{font-weight:700;display:flex;gap:8px;align-items:flex-start}
+#toast .t-body{margin:6px 0 0 26px;font-size:13px;line-height:1.6}
+#toast .t-body div{margin-top:2px}
+#toast .t-body b{color:var(--muted);font-weight:600;margin-right:4px}
+#toast .t-close{position:absolute;top:6px;right:6px;border:none;background:transparent;font-size:18px;line-height:1;padding:4px 8px;color:var(--muted)}
+/* 種類ごとの色（背景に色を付け、枠も太くしてダークモードでも目立つように） */
+:root{
+  --t-ok-bg:#e9f7ee; --t-ok-line:#2e9d5b; --t-ok-text:#123d24;
+  --t-info-bg:#e7f3fe; --t-info-line:#0a84d6; --t-info-text:#0b2e4a;
+  --t-warn-bg:#fff4dc; --t-warn-line:#c98500; --t-warn-text:#4a3200;
+  --t-err-bg:#fdeceb; --t-err-line:#c0392b; --t-err-text:#4d130d;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --t-ok-bg:#17402a; --t-ok-line:#4fd18b; --t-ok-text:#eafff2;
+    --t-info-bg:#123450; --t-info-line:#4db8ff; --t-info-text:#eaf6ff;
+    --t-warn-bg:#4a3810; --t-warn-line:#ffc23d; --t-warn-text:#fff6df;
+    --t-err-bg:#541e19; --t-err-line:#ff7a6b; --t-err-text:#ffeceb;
+  }
+  #toast{box-shadow:0 10px 32px rgba(0,0,0,.6),0 0 0 1px rgba(255,255,255,.08)}
+}
+#toast.success{background:var(--t-ok-bg);color:var(--t-ok-text);border-color:var(--t-ok-line)} #toast.success .t-icon{color:var(--t-ok-line)}
+#toast.info{background:var(--t-info-bg);color:var(--t-info-text);border-color:var(--t-info-line)} #toast.info .t-icon{color:var(--t-info-line)}
+#toast.warn{background:var(--t-warn-bg);color:var(--t-warn-text);border-color:var(--t-warn-line)} #toast.warn .t-icon{color:var(--t-warn-line)}
+#toast.error{background:var(--t-err-bg);color:var(--t-err-text);border-color:var(--t-err-line)} #toast.error .t-icon{color:var(--t-err-line)}
+#toast .t-body b, #toast .t-close{color:inherit;opacity:.75}
+#toast .t-icon{font-size:16px}
+@media (max-width:820px){
+  main{flex-direction:column}
+  textarea#ta{min-height:55vh}
+  aside{max-height:none}
+  #count{margin-left:0;width:100%}
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>小説 整形・校正ツール</h1>
+  <p>Notionからコピーした本文を下に貼り付けると、改行を整えた状態になります。このページはネットに一切接続しないので、本文が外に出ることはありません。 <a href="https://github.com/hano2552550-web/novel-tool#readme" target="_blank" rel="noopener">使い方はこちら</a>　<a href="https://docs.google.com/forms/d/e/1FAIpQLSdpWWd7MK2q0u5Au-3xHVOrL-j88KVaN6KFAseBAIou_LjZmw/viewform" target="_blank" rel="noopener">💬 フィードバック・不具合報告</a></p>
+</header>
+
+<div class="toolbar">
+  <button id="btnCopy" class="primary">📋 pixiv用にコピー</button>
+  <button id="btnCheck">🔍 校正チェック</button>
+  <button id="btnFixAll">✨ 安全な修正をまとめて適用</button>
+  <button id="btnUndo">↩ 元に戻す</button>
+  <button id="btnAi">🤖 AI校正用にコピー</button>
+  <button id="btnClear">🗑 クリア</button>
+  <span id="count"></span>
+</div>
+
+<details class="settings">
+  <summary>整形の設定</summary>
+  <div class="setgrid">
+    <label class="row"><input type="checkbox" id="optAuto"> 貼り付け時に自動で整形する</label>
+    <label>改行の扱い
+      <select id="optMode">
+        <option value="auto">自動（1行おきになっていたら詰める）</option>
+        <option value="halve">空行を半分に詰める</option>
+        <option value="removeBlank">空行をすべて削除</option>
+        <option value="none">変更しない</option>
+      </select>
+    </label>
+    <label>地の文の字下げ（行頭の全角スペース）
+      <select id="optIndent">
+        <option value="keep">変更しない</option>
+        <option value="add">付ける（「」の行には付けない）</option>
+        <option value="remove">すべて外す</option>
+      </select>
+    </label>
+    <label>連続する空行の上限（-1で制限なし）
+      <input type="number" id="optMaxBlank" min="-1" max="20" step="1">
+    </label>
+    <label class="row"><button id="btnFormat">今の本文に整形をかけ直す</button></label>
+    <label class="row"><button id="btnDiag">🩺 貼り付けの診断情報をコピー</button></label>
+  </div>
+</details>
+
+<details class="settings" id="memoBox">
+  <summary>作品メモ（キャラ名・用語・世界観）<span id="memoBadge" class="memo-badge"></span></summary>
+  <div class="memo-bar">
+    <label>使うメモ <select id="memoSelect"></select></label>
+    <button class="small" id="memoNew">＋ 新しいメモ</button>
+    <button class="small" id="memoRename">名前を変更</button>
+    <button class="small" id="memoDelete">削除</button>
+    <span class="memo-sep"></span>
+    <button class="small" id="memoExport">💾 .txtで書き出す</button>
+    <button class="small" id="memoImport">📂 .txtを読み込む</button>
+    <input type="file" id="memoFile" accept=".txt,text/plain" hidden>
+    <button class="small" id="memoTemplate">ひな形を入れる</button>
+    <button class="small" id="memoClear">🗑 クリア</button>
+  </div>
+  <textarea id="memoText" spellcheck="false" placeholder="ここに作品の設定を書きます（「ひな形を入れる」で書き方の例が入ります）。&#10;書いた内容はこのブラウザの中にだけ保存されます。"></textarea>
+  <div class="memo-foot">
+    <span id="memoStatus" class="memo-status"></span>
+    <label class="row"><input type="checkbox" id="memoToAi"> 「AI校正用にコピー」のときにメモを添える</label>
+    <span class="desc">【人物】【用語】に書いた名前の表記ゆれと、【言い換え】に書いた誤りを校正チェックで指摘します。</span>
+  </div>
+</details>
+
+<main>
+  <section class="editor">
+    <textarea id="ta" spellcheck="false" placeholder="ここにNotionからコピーした本文を貼り付けてください（Ctrl+V / ⌘V）&#10;&#10;貼り付けたあと、このまま直接編集もできます。"></textarea>
+  </section>
+  <aside>
+    <div id="summary">校正チェック</div>
+    <div class="goto"><label>行へ移動 <input type="number" id="gotoLine" min="1" placeholder="行番号"></label><button class="small" id="gotoBtn">移動</button><span class="desc">AI校正の結果の「行」を入れると、その行に移動します</span></div>
+    <details class="rules"><summary>チェック項目の選択</summary><div id="rules"></div></details>
+    <div id="issues"><p class="empty">「校正チェック」を押すと、ここに指摘が出ます。指摘をクリックすると本文の該当箇所に移動します。</p></div>
+  </aside>
+</main>
+<div id="toast" role="status" aria-live="polite"></div>
+
+<script id="core">
+'use strict';
+/* ========== 整形まわり ========== */
+const BLOCK_TAGS = new Set(['P','DIV','H1','H2','H3','H4','H5','H6','LI','BLOCKQUOTE','PRE','TR','SECTION','ARTICLE','HEADER','FOOTER','UL','OL','TABLE','FIGURE','DETAILS','SUMMARY','HR']);
+const SKIP_TAGS = new Set(['STYLE','SCRIPT','META','LINK','TITLE','HEAD','IMG','SVG']);
+
+// クリップボードのHTML（Notionの書式）を、1ブロック=1行のテキストに変換
+function htmlToText(html, parser){
+  const doc = parser.parseFromString(html, 'text/html');
+  const lines = [];
+  let cur = null;
+  const pushCur = () => { if (cur !== null) { lines.push(cur); cur = null; } };
+  const walk = (node) => {
+    for (const ch of node.childNodes) {
+      if (ch.nodeType === 3) {
+        const v = ch.nodeValue.replace(/\r/g, '');
+        if (/^\s*$/.test(v) && v.includes('\n')) continue; // HTMLの整形用空白は無視
+        cur = (cur ?? '') + v;
+      } else if (ch.nodeType === 1) {
+        const tag = ch.tagName.toUpperCase();
+        if (SKIP_TAGS.has(tag)) continue;
+        if (tag === 'BR') { cur = (cur ?? '') + '\n'; continue; }
+        if (BLOCK_TAGS.has(tag)) {
+          pushCur();
+          const before = lines.length;
+          walk(ch);
+          if (cur === null && lines.length === before) lines.push(''); // 空ブロック=空行
+          else pushCur();
+        } else {
+          walk(ch);
+        }
+      }
+    }
+  };
+  walk(doc.body);
+  pushCur();
+  return lines.join('\n');
+}
+
+// Notionが独自形式でクリップボードに入れるブロック情報（空のブロック＝空行も含む）から本文を復元
+// plain: 同時にコピーされた普通のテキスト（部分選択の範囲を正しく反映するため照合に使う）
+function notionJsonToText(json, plain){
+  const data = JSON.parse(json);
+  // 形式の違いに備えて、{blockId, blockSubtree} の並びをデータ全体から探す
+  const findSel = (o, d) => {
+    if (!o || typeof o !== 'object' || d > 8) return null;
+    if (Array.isArray(o) && o.length && o.every(x => x && typeof x === 'object' && 'blockId' in x)) return o;
+    for (const k in o) { const r = findSel(o[k], d + 1); if (r) return r; }
+    return null;
+  };
+  const sel = (data && data.blockSelection && data.blockSelection.blocks) || findSel(data, 0);
+  if (!Array.isArray(sel) || !sel.length) return null;
+  const lines = [];
+  const titleOf = v => ((v && v.properties && v.properties.title) || []).map(seg => seg[0] || '').join('');
+  const render = (id, map, depth) => {
+    const rec = map[id]; const v = rec && (rec.value && rec.value.value ? rec.value.value : rec.value);
+    if (!v || v.alive === false || depth > 20) return;
+    if (v.type === 'page' && depth > 0) return;
+    lines.push(titleOf(v));
+    for (const cid of (v.content || [])) if (map[cid]) render(cid, map, depth + 1);
+  };
+  for (const b of sel) {
+    const map = (b.blockSubtree && b.blockSubtree.block) || {};
+    render(b.blockId, map, 0);
+  }
+  if (!lines.length) return null;
+  // 普通のテキストと段落数が一致すれば、文字はそちらを使う（選択範囲の途中から始まっていても正確）
+  if (plain) {
+    const paras = normalizeNewlines(plain).replace(/^\n+|\n+$/g, '').split(/\n\n/);
+    const nonEmpty = lines.filter(l => l !== '');
+    if (paras.length === nonEmpty.length) {
+      // 基本はブロック情報の文字を使う（普通のテキストは先頭の字下げが消えることがあるため）。
+      // 最初と最後の段落だけは、途中から選択していた場合に備えて、選択範囲（普通のテキスト）を優先する。
+      let k = 0; const last = nonEmpty.length - 1;
+      return lines.map(l => {
+        if (l === '') return '';
+        const p = paras[k], i = k++;
+        const partial = (i === 0 || i === last) && p.trim() !== l.trim() && l.includes(p.trim());
+        return partial ? p : l;
+      }).join('\n');
+    }
+  }
+  return lines.join('\n');
+}
+
+function normalizeNewlines(t){
+  return t.replace(/\r\n?/g, '\n').replace(/[\u2028\u2029]/g, '\n').replace(/\u00A0/g, ' ');
+}
+
+// すべての行が空行で区切られている＝「1行おき」状態かどうか
+function looksDoubleSpaced(t){
+  const s = t.replace(/^\n+|\n+$/g, '');
+  const runs = s.match(/\n+/g) || [];
+  if (runs.length < 2) return false;
+  return runs.every(r => r.length >= 2);
+}
+
+const OPEN_BRACKETS = /^[「『（(【〈《“"\[]/;
+
+function formatText(t, opt, exact){
+  t = normalizeNewlines(t);
+  t = t.replace(/[ \t\u3000]+$/gm, ''); // 行末の空白を除去
+  const halve = s => s.replace(/\n+/g, m => '\n'.repeat(Math.max(1, Math.floor(m.length / 2))));
+  // exact=true：Notionのブロック情報から正確に復元済みなので、自動では詰めない
+  if (opt.mode === 'auto') { if (!exact && looksDoubleSpaced(t)) t = halve(t); }
+  else if (opt.mode === 'halve') t = halve(t);
+  else if (opt.mode === 'removeBlank') t = t.replace(/\n{2,}/g, '\n');
+  const mb = Number(opt.maxBlank);
+  if (Number.isFinite(mb) && mb >= 0) {
+    t = t.replace(new RegExp('\\n{' + (mb + 2) + ',}', 'g'), '\n'.repeat(mb + 1));
+  }
+  if (opt.indent === 'add') {
+    t = t.split('\n').map(l => {
+      if (!l.trim()) return '';
+      const body = l.replace(/^[ \u3000]+/, '');
+      return OPEN_BRACKETS.test(body) ? body : '\u3000' + body;
+    }).join('\n');
+  } else if (opt.indent === 'remove') {
+    t = t.replace(/^[ \u3000]+/gm, '');
+  }
+  return t.replace(/^\n+|\n+$/g, '');
+}
+
+/* ========== 校正ルール ========== */
+// level: warn=直したほうがよい / info=参考（意図的ならOK）
+// safe: 「まとめて適用」の対象になるか
+const RULES = [
+  { id:'halfExcl', label:'半角の「!」「?」', level:'warn', safe:true,
+    re:/(?<![A-Za-z0-9])[!?]+(?![A-Za-z0-9])/g,
+    fix:m => m[0].replace(/!/g,'！').replace(/\?/g,'？'),
+    desc:'小説本文では全角の「！」「？」が一般的です。' },
+  { id:'ellipsisAlt', label:'三点リーダーの代用', level:'warn', safe:true,
+    re:/・{2,}|\.{3,}|。{3,}|‥+/g, fix:() => '……',
+    desc:'「・・・」「...」は「……」（三点リーダー2つ）に統一するのが一般的です。' },
+  { id:'ellipsisOdd', label:'三点リーダーの個数', level:'warn', safe:true,
+    re:/(?<!…)…(?:……)*(?!…)/g, fix:m => m[0] + '…',
+    desc:'「…」は2個（……）単位で使うのが一般的です。' },
+  { id:'punctDup', label:'句読点の重複', level:'warn', safe:true,
+    re:/、{2,}|、。|。、|(?<!。)。。(?!。)/g, fix:m => m[0].includes('。') ? '。' : '、',
+    desc:'「、、」「。。」「、。」などの重複です。' },
+  { id:'exclPunct', label:'「！」「？」の直後の句読点', level:'warn', safe:true,
+    re:/([！？])[。、]+/g, fix:m => m[1],
+    desc:'「！」「？」の後ろに句読点は付けません。' },
+  { id:'kuten', label:'閉じ括弧の直前の「。」', level:'warn', safe:true,
+    re:/。+(?=[」』])/g, fix:() => '',
+    desc:'「〜です。」→「〜です」のように、閉じ括弧の直前の句点は省くのが一般的です。' },
+  { id:'touten', label:'閉じ括弧の直前の「、」', level:'warn', safe:true,
+    re:/、+(?=[」』])/g, fix:() => '',
+    desc:'閉じ括弧の直前に読点があります。' },
+  { id:'exclSpace', label:'「！」「？」の後の全角スペース', level:'warn', safe:true,
+    re:/[！？]+(?=[^！？!?\s\u3000」』）)】〕〉》"”’…―〜～♡♥♪☆★])/g, fix:m => m[0] + '\u3000',
+    desc:'文中の「！」「？」の後は全角スペースを1つ空けるのが一般的です（閉じ括弧の前・行末は不要）。' },
+  { id:'kakkoIndent', label:'鉤括弧の行の字下げ', level:'info', safe:false,
+    re:/^[ \u3000]+(?=[「『])/gm, fix:() => '',
+    desc:'「」で始まる台詞の行は字下げしないのが一般的です。' },
+  { id:'dash', label:'ダッシュの表記', level:'info', safe:false,
+    re:/(?<!―)―(?:――)*(?!―)|[—─]+|－{2,}/g,
+    fix:m => m[0][0] === '―' ? m[0] + '―' : '―'.repeat(Math.max(2, m[0].length + (m[0].length % 2))),
+    desc:'ダッシュは「――」（2つ単位）にするのが一般的です。記号の種類が違う場合も指摘します。' },
+  { id:'dupParticle', label:'助詞の重複', level:'warn', safe:false,
+    re:/をを|がが|(?<![もの])のの(?![しの])/g,
+    desc:'「をを」「のの」など、打ち間違いの可能性があります。' },
+  { id:'ranuki', label:'ら抜き言葉', level:'info', safe:false,
+    re:/(見|来|着|寝|出|居|似|起き|食べ|考え|決め|変え|逃げ|投げ|信じ|生き|受け|助け|覚え|忘れ|入れ|止め|辞め|借り|浴び|降り|落ち|浴び)れ(る|ない|なかった|た|て|ます|ません|れば)/g,
+    fix:m => m[1] + 'られ' + m[2],
+    desc:'台詞の口語として意図的ならそのままでOKです。地の文では「られる」が一般的です。' },
+  { id:'halfKana', label:'半角カタカナ', level:'warn', safe:false,
+    re:/[\uFF61-\uFF9F]+/g,
+    desc:'半角カタカナは環境によって表示が崩れることがあります。' },
+  { id:'halfSpace', label:'日本語の間の半角スペース', level:'info', safe:false,
+    re:/(?<=[ぁ-んァ-ヶ一-龠々])[ \t]+(?=[ぁ-んァ-ヶ一-龠々])/g, fix:() => '',
+    desc:'意図しない半角スペースの可能性があります。' },
+  { id:'repeat', label:'言葉のくり返し', level:'warn', safe:false, custom:checkRepeat,
+    desc:'同じ文や隣の文で、同じ言葉（「ただ」「もう」など）がくり返されています。意図的な反復でなければ、言い換えや削除を検討してください。' },
+  { id:'misuse', label:'誤用・誤変換', level:'warn', safe:false, custom:checkMisuse,
+    desc:'よくある慣用句の誤用や誤変換・表記の誤りです。台詞であえて崩している場合はそのままでOKです。' },
+  { id:'redundant', label:'重ね言葉', level:'info', safe:false, custom:checkRedundant,
+    desc:'「頭痛が痛い」のように、同じ意味の言葉が重なっている表現です。' },
+  { id:'sameEnding', label:'同じ文末の連続', level:'info', safe:false, custom:checkSameEnding,
+    desc:'地の文で同じ文末（「〜た。」など）が3文以上続いている箇所です。リズムが単調になっていないか確認してください。' },
+  { id:'memo', label:'作品メモの表記（名前・用語）', level:'warn', safe:false, custom:t => checkMemo(t),
+    desc:'作品メモに登録した名前・用語と表記が違う箇所や、【言い換え】で決めた言葉です。' },
+  { id:'brackets', label:'括弧の閉じ忘れ・対応ミス', level:'warn', safe:false, custom:checkBrackets,
+    desc:'開き括弧と閉じ括弧の数・組み合わせが合っていない箇所です。' },
+  { id:'indentMix', label:'字下げの不統一', level:'info', safe:false, custom:checkIndentMix,
+    desc:'地の文で、行頭に全角スペースがある行とない行が混在しています（少数派を指摘）。' },
+  { id:'yure', label:'表記ゆれ', level:'info', safe:false, custom:checkYure,
+    desc:'同じ言葉が漢字・ひらがなで混在しています。キャラごとの書き分けなど意図的ならOKです。' },
+  { id:'longSentence', label:'長すぎる一文（120字超）', level:'info', safe:false, custom:checkLong,
+    desc:'一文が長いと読みにくくなりがちです。区切れるか検討してみてください。' },
+];
+
+/* ========== 作品メモ ========== */
+let MEMO_TEXT = '';
+function setMemoText(s){ MEMO_TEXT = s || ''; }
+const toKata = s => s.replace(/[ぁ-ゖ]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60));
+const toHira = s => s.replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeAt(0) - 0x60));
+
+// メモから「登録名」と「言い換え（誤→正）」を読み取る
+function parseMemo(memo){
+  const terms = [], replaces = [];
+  for (const raw of (memo || '').split(/\r?\n/)) {
+    const line = raw.trim();
+    let m = line.match(/^【(?:人物|キャラ|名前|用語|地名|固有名詞)】\s*(.+)$/);
+    if (m) {
+      const head = m[1].split(/[（(：:]/)[0];
+      for (const w of head.split(/[、,，／/・\s　]+/)) if (w.length >= 2) terms.push(w);
+      continue;
+    }
+    m = line.match(/^【言い換え】\s*(.+?)\s*(?:→|->|⇒)\s*(.+)$/);
+    if (m) for (const w of m[1].split(/[、,，／/]+/)) if (w.trim()) replaces.push([w.trim(), m[2].trim()]);
+  }
+  return {terms:[...new Set(terms)], replaces};
+}
+
+// 登録名の「打ち間違いらしい形」を作る（同じ文字の重なり、隣り合う文字の入れ替わり、長い名前は1文字抜け）
+function typoVariants(term){
+  const v = new Set(), a = [...term];
+  for (let i = 0; i < a.length; i++) v.add(a.slice(0, i + 1).join('') + a[i] + a.slice(i + 1).join(''));  // ひかり→ひかりり
+  for (let i = 0; i < a.length - 1; i++) { const b = a.slice(); [b[i], b[i + 1]] = [b[i + 1], b[i]]; v.add(b.join('')); } // ひかり→ひりか
+  if (a.length >= 4) for (let i = 1; i < a.length - 1; i++) v.add(a.slice(0, i).join('') + a.slice(i + 1).join('')); // 4文字以上は途中の1文字抜けも
+  v.delete(term);
+  return [...v].filter(x => x.length >= 2);
+}
+
+function checkMemo(t){
+  const {terms, replaces} = parseMemo(MEMO_TEXT);
+  const out = [], seen = new Set();
+  const push = (i, len, msg, fix) => { const k = i + ':' + len; if (seen.has(k)) return; seen.add(k); out.push({index:i, length:len, msg, fixText:fix}); };
+  // 正しい表記が出てくる範囲（そこに重なる候補は誤検出なので除外）
+  const exact = [];
+  for (const term of terms) { let i = t.indexOf(term); while (i !== -1) { exact.push([i, i + term.length]); i = t.indexOf(term, i + 1); } }
+  const overlapsExact = (s, e) => exact.some(([a, b]) => s < b && a < e && !(s <= a && b <= e));
+  for (const term of terms) {
+    for (const v of new Set([toKata(term), toHira(term)])) {
+      if (v === term || terms.includes(v)) continue;
+      let i = t.indexOf(v);
+      while (i !== -1) { push(i, v.length, `作品メモの表記は「${term}」です`, term); i = t.indexOf(v, i + v.length); }
+    }
+    // 途中の1文字だけ違うもの（なつめ→なすめ）。最初・最後の文字の違いは別の言葉と区別できないため対象外
+    const kind = c => /[ぁ-ゖ]/.test(c) ? 'h' : /[ァ-ヺ]/.test(c) ? 'k' : /[一-龠々]/.test(c) ? 'c' : 'o';
+    const ta_ = [...term];
+    if (ta_.length >= 3) {
+      for (let i = 0; i + ta_.length <= t.length; i++) {
+        if (t[i] !== ta_[0] || t[i + ta_.length - 1] !== ta_[ta_.length - 1]) continue;
+        let diff = -1, bad = false;
+        for (let j = 1; j < ta_.length - 1; j++) {
+          if (t[i + j] === ta_[j]) continue;
+          if (diff !== -1 || kind(t[i + j]) !== kind(ta_[j])) { bad = true; break; }
+          diff = j;
+        }
+        if (bad || diff === -1) continue;
+        const cand = t.substr(i, ta_.length);
+        if (terms.includes(cand) || overlapsExact(i, i + ta_.length)) continue;
+        push(i, ta_.length, `「${term}」の打ち間違いかもしれません（作品メモに登録された名前）`, term);
+      }
+      // 最初か最後の1文字だけ違うもの（まつめ・なつみ）。普通の言葉（ひかり→ひかる等）と区別するため、
+      // 前が文の区切り・漢字・カタカナ、後ろが助詞や句読点のように「名前らしい位置」にあるときだけ指摘する
+      const L = ta_.length;
+      const before = c => !c || !/[ぁ-ゖー]/.test(c);
+      const after = c => !c || /[のはがをにもとへや、。！？!?」』）)…―ちくさ\s　]/.test(c);
+      // ローマ字入力で起きやすい打ち間違い（子音が同じ＝同じ行、または母音が同じ＝同じ段）のときだけ
+      const ROWS = ['あいうえお','かきくけこ','がぎぐげご','さしすせそ','ざじずぜぞ','たちつてと','だぢづでど','なにぬねの','はひふへほ','ばびぶべぼ','ぱぴぷぺぽ','まみむめも','やいゆえよ','らりるれろ','わいうえを'];
+      const pos = c => { c = toHira(c); for (let r = 0; r < ROWS.length; r++) { const k = ROWS[r].indexOf(c); if (k !== -1) return [r, k]; } return null; };
+      const similar = (a, b) => { const p = pos(a), q = pos(b); return !!(p && q && (p[0] === q[0] || p[1] === q[1])); };
+      for (let i = 0; i + L <= t.length; i++) {
+        let diff = -1, bad = false;
+        for (let j = 0; j < L; j++) {
+          if (t[i + j] === ta_[j]) continue;
+          if (diff !== -1 || (j !== 0 && j !== L - 1) || kind(t[i + j]) !== kind(ta_[j])) { bad = true; break; }
+          diff = j;
+        }
+        if (bad || diff === -1) continue;
+        if (!before(t[i - 1]) || !after(t[i + L])) continue;
+        if (!similar(t[i + diff], ta_[diff])) continue;
+        const cand = t.substr(i, L);
+        if (terms.includes(cand) || overlapsExact(i, i + L)) continue;
+        push(i, L, `「${term}」の打ち間違いかもしれません（作品メモに登録された名前）`, term);
+      }
+    }
+    for (const v of typoVariants(term)) {
+      if (terms.includes(v)) continue;
+      let i = t.indexOf(v);
+      while (i !== -1) {
+        const s = i, e = i + v.length;
+        // 正しい名前の一部が重なって偶然できた並び（例：「なつめ」の中の「つめ」）は除外
+        if (!overlapsExact(s, e) && !(t.substr(s, term.length) === term && v.length < term.length)) push(s, v.length, `「${term}」の打ち間違いかもしれません（作品メモに登録された名前）`, term);
+        i = t.indexOf(v, i + 1);
+      }
+    }
+  }
+  for (const [wrong, right] of replaces) {
+    let i = t.indexOf(wrong);
+    while (i !== -1) { out.push({index:i, length:wrong.length, msg:`作品メモで「${right}」と決めた言葉です`, fixText:right}); i = t.indexOf(wrong, i + wrong.length); }
+  }
+  // 長い名前の指摘に含まれる短い名前の指摘（春野ヒカリ の中の ヒカリ）は省く
+  const inside = (a, b) => a !== b && b.index <= a.index && a.index + a.length <= b.index + b.length;
+  return out.filter(a => !out.some(b => inside(a, b))).sort((a, b) => a.index - b.index);
+}
+
+/* ========== 言葉のくり返し・誤用・重ね言葉 ========== */
+// 文の区切り（。！？と改行）。台詞の中も1文として扱う
+function splitSentences(t){
+  const out = []; const re = /[^。！？!?\n]+[。！？!?」』]*/g; let m;
+  while ((m = re.exec(t))) out.push({start:m.index, end:m.index + m[0].length, text:m[0]});
+  return out;
+}
+const sentenceIndexer = t => { const ss = splitSentences(t); return i => { let lo = 0, hi = ss.length - 1, r = -1; while (lo <= hi) { const mid = (lo + hi) >> 1; if (ss[mid].start <= i) { r = mid; lo = mid + 1; } else hi = mid - 1; } return r; }; };
+
+// くり返しが気になりやすい言葉。neg：直後に続くと別の言葉になる文字、head：文頭・読点の後のときだけ数える
+const REPEAT_WORDS = [
+  ['ただ', '[いしよすれ]'], ['もう', '[けしすかでれ]'], ['まだ', '[ら]'], ['ずっと'], ['そっと'], ['ふと', '[んこっいもらる]'], ['きっと'],
+  ['とても'], ['すこし'], ['少し'], ['ちょっと'], ['なんだか'], ['まるで'], ['やっぱり'], ['やはり'], ['ほんとうに'], ['本当に'],
+  ['すごく'], ['じっと'], ['ゆっくり'], ['なんて', '[こ]'], ['すっかり'], ['ぜんぶ'], ['全部'], ['たしかに'], ['確かに'], ['ほんの'],
+  ['けれど', '', true], ['けれども', '', true], ['だけど', '', true], ['しかし', '', true], ['それでも', '', true], ['そして', '', true],
+  ['それに', '', true], ['だから', '', true], ['なのに', '', true], ['でも', '', true], ['また', '', true], ['ただし', '', true]
+];
+function checkRepeat(t){
+  const out = [], sIdx = sentenceIndexer(t);
+  const memoNames = new Set(parseMemo(MEMO_TEXT).terms);
+  for (const [w, neg, head] of REPEAT_WORDS) {
+    const re = new RegExp((head ? '(?<=^|[。、！？「『\\n\\u3000 ])' : '') + w + '(?:' + w + ')?' + (neg ? '(?!' + neg + ')' : ''), 'g');
+    let m, prev = null;
+    while ((m = re.exec(t))) {
+      const si = sIdx(m.index);
+      if (prev && si - prev.si <= 1) out.push({index:m.index, length:m[0].length, msg:`すぐ前（${m.index - prev.i}字前）にも「${w}」があります。言い換えるか、どちらかを削れないか検討してください`});
+      prev = {i:m.index, si};
+    }
+  }
+  // 同じ文の中で、同じ漢字の言葉（2文字以上）がくり返されているもの
+  for (const s of splitSentences(t)) {
+    const words = {}; const re = /[一-龠々]{2,}/g; let m;
+    while ((m = re.exec(s.text))) {
+      const w = m[0]; if (memoNames.has(w)) continue;
+      if (words[w] !== undefined) out.push({index:s.start + m.index, length:w.length, msg:`同じ文の中で「${w}」がくり返されています`});
+      else words[w] = m.index;
+    }
+  }
+  return out.sort((a, b) => a.index - b.index);
+}
+
+// 地の文で、同じ文末（最後の2文字）が3文以上続いているもの
+function checkSameEnding(t){
+  const out = []; let run = [];
+  const flush = () => { if (run.length >= 3) for (const r of run.slice(2)) out.push({index:r.i, length:r.len, msg:`「〜${r.end}。」で終わる文が${run.length}回続いています（文末が単調になっていないか確認してください）`}); run = []; };
+  for (const s of splitSentences(t)) {
+    const body = s.text.replace(/^[\s　]+/, '');
+    if (/^[「『（(]/.test(body) || !/。$/.test(body)) { flush(); continue; }
+    const end = body.slice(-3, -1);
+    if (run.length && run[0].end !== end) flush();
+    run.push({i:s.end - 3, len:2, end});
+  }
+  flush();
+  return out;
+}
+
+// よくある誤用・誤変換（[誤り, 正しい表記, 説明]）。文脈によらず誤りといえるものだけ
+const MISUSES = [
+  ['的を得る', '的を射る', '慣用句の誤用'], ['的を得た', '的を射た', '慣用句の誤用'], ['汚名挽回', '汚名返上', '慣用句の誤用（「名誉挽回」とも）'],
+  ['取りつく暇', '取りつく島', '慣用句の誤用'], ['取り付く暇', '取り付く島', '慣用句の誤用'], ['怒り心頭に達', '怒り心頭に発', '慣用句の誤用'],
+  ['熱にうなされ', '熱に浮かされ', '慣用句の誤用'], ['二の舞を踏', '二の舞を演じ', '慣用句の誤用（「二の足を踏む」と混同）'],
+  ['舌の先の乾かぬうち', '舌の根の乾かぬうち', '慣用句の誤用'], ['上や下への', '上を下への', '慣用句の誤用'], ['愛想を振りまく', '愛嬌を振りまく', '慣用句の誤用'],
+  ['押しも押されぬ', '押しも押されもせぬ', '慣用句の誤用'], ['采配を振るう', '采配を振る', '慣用句の誤用'], ['寸暇を惜しまず', '寸暇を惜しんで', '慣用句の誤用'],
+  ['足元をすくわれ', '足をすくわれ', '慣用句の誤用（本来は「足をすくわれる」）'], ['過半数を超え', '過半数に達し', '「過半数」はすでに半分を超えている意味'],
+  ['やむおえない', 'やむをえない', '表記の誤り'], ['やむおえず', 'やむをえず', '表記の誤り'], ['ざるおえない', 'ざるをえない', '表記の誤り'], ['ざる負えない', 'ざるを得ない', '誤変換'],
+  ['こんにちわ', 'こんにちは', '表記の誤り'], ['こんばんわ', 'こんばんは', '表記の誤り'], ['ふいんき', 'ふんいき', '表記の誤り'], ['うる覚え', 'うろ覚え', '表記の誤り'],
+  ['とうり', 'とおり', '表記の誤り（「通り」）'], ['おうきい', 'おおきい', '表記の誤り'], ['おうきな', 'おおきな', '表記の誤り'],
+  ['ちじむ', 'ちぢむ', '表記の誤り'], ['ちじこま', 'ちぢこま', '表記の誤り'],
+  ['つずく', 'つづく', '表記の誤り'], ['つずけ', 'つづけ', '表記の誤り'], ['つずき', 'つづき', '表記の誤り'], ['いちずけ', 'いちづけ', '表記の誤り'],
+  ['ずつ', null], ['づつ', 'ずつ', '表記の誤り（「一つずつ」）'], ['を期に', 'を機に', '誤変換'], ['以外と', '意外と', '誤変換（「思いのほか」の意味なら「意外と」）'],
+  ['異和感', '違和感', '誤変換'], ['完壁', '完璧', '誤変換（「璧」は玉へん）'], ['絶対絶命', '絶体絶命', '誤変換'], ['危機一発', '危機一髪', '誤変換'],
+  ['五里夢中', '五里霧中', '誤変換'], ['意味深長', null], ['短刀直入', '単刀直入', '誤変換'], ['興味深深', '興味津々', '誤変換'], ['興味深々', '興味津々', '誤変換'],
+  ['無我無中', '無我夢中', '誤変換'], ['一心同体', null], ['口先三寸', '舌先三寸', '慣用句の誤用'], ['頭をかしげ', '首をかしげ', '慣用句の誤用'],
+  ['眉をしかめ', '眉をひそめ', '慣用句の誤用（「顔をしかめる」と混同）'], ['目鼻が利く', '目端が利く', '慣用句の誤用'], ['腹が煮えくり返', 'はらわたが煮えくり返', '慣用句の誤用']
+].filter(x => x[1]);
+// 〜ずらい（〜づらい）は形で判定する
+function checkMisuse(t){
+  const out = [];
+  for (const [w, fix, note] of MISUSES) {
+    let i = t.indexOf(w);
+    while (i !== -1) {
+      // 「以外と」は「それ以外と」のような正しい使い方もあるので、文頭・読点の後のときだけ
+      const next = t[i + w.length] || '';
+      if ((w === 'づつ' && next === 'み') || (w === 'とうり' && /[ょゅつ]/.test(next))) { i = t.indexOf(w, i + 1); continue; }
+      if (w === '以外と' && i > 0 &&!/[。、「『\n　 ]/.test(t[i - 1])) { i = t.indexOf(w, i + 1); continue; }
+      out.push({index:i, length:w.length, msg:`${note}：「${w}」→「${fix}」`, fixText:fix});
+      i = t.indexOf(w, i + w.length);
+    }
+  }
+  const re = /([ぁ-んァ-ヶ一-龠])ずら(い|く|かった|そう)/g; let m;
+  while ((m = re.exec(t))) out.push({index:m.index + 1, length:2, msg:'表記の誤り：「〜ずらい」→「〜づらい」（「辛い」がにごった形）', fixText:'づら'});
+  return out.sort((a, b) => a.index - b.index);
+}
+
+// 重ね言葉（同じ意味を重ねている表現）
+const REDUNDANT = [
+  ['頭痛が痛', '頭が痛'], ['後で後悔', '後悔'], ['あとで後悔', '後悔'], ['違和感を感じ', '違和感を覚え'], ['一番最初', '最初'], ['一番最後', '最後'],
+  ['まず最初に', 'まず'], ['被害を被', '被害を受け'], ['犯罪を犯', '罪を犯'], ['馬から落馬', '落馬'], ['返事を返', '返事をし'], ['必ず必要', '必要'],
+  ['今現在', '現在'], ['元旦の朝', '元旦'], ['炎天下の下', '炎天下'], ['射程距離', '射程'], ['すべて一任', '一任'], ['思いがけないハプニング', 'ハプニング'],
+  ['あらかじめ予約', '予約'], ['あらかじめ用意', '用意'], ['過信しすぎ', '過信し'], ['挙式を挙げ', '式を挙げ'], ['歌を歌', null], ['各々それぞれ', 'それぞれ'],
+  ['いまだに未', '未'], ['収入が入', '収入があ'], ['製造メーカー', 'メーカー'], ['被害をこうむ', '被害を受け'], ['車に乗車', '乗車'], ['最後の切り札', '切り札'],
+  ['加工を加え', '加工を施し'], ['期待して待', '期待し'], ['断トツの一位', '断トツ'], ['従来から', '従来'], ['約〜ほど', null], ['余分な贅肉', '贅肉']
+].filter(x => x[1]);
+function checkRedundant(t){
+  const out = [];
+  for (const [w, fix] of REDUNDANT) { let i = t.indexOf(w); while (i !== -1) { out.push({index:i, length:w.length, msg:`意味が重なっています：「${w}」→「${fix}」など`, fixText:fix}); i = t.indexOf(w, i + w.length); } }
+  return out.sort((a, b) => a.index - b.index);
+}
+
+const MEMO_TEMPLATE = `【作品】（原作名・シリーズ名）
+
+【人物】春野ひかり、ひかり（一人称：わたし／夏目のことは「なつめくん」と呼ぶ）
+【人物】夏目蒼、蒼（一人称：俺／ひかりのことは「春野」と呼ぶ）
+（名前は「、」で区切って並べ、（　）の中に一人称・口調・呼び方などを書きます）
+
+【用語】星見坂（作品内の地名・固有名詞・独自の言葉）
+
+【言い換え】なつめ君→なつめくん
+（よく間違える表記→正しい表記）
+
+【世界観】
+（舞台・時代・設定・関係性など、自由に書いてください）
+`;
+
+function checkBrackets(t){
+  const pairs = {'「':'」','『':'』','（':'）','(':')','【':'】','〈':'〉','《':'》'};
+  const rev = {}; for (const k in pairs) rev[pairs[k]] = k;
+  const stack = [], out = [];
+  for (let i = 0; i < t.length; i++) {
+    const c = t[i];
+    if (pairs[c]) stack.push({c, i});
+    else if (rev[c]) {
+      if (stack.length && stack[stack.length - 1].c === rev[c]) stack.pop();
+      else out.push({index:i, length:1, msg:`対応する「${rev[c]}」が見つかりません`});
+    }
+  }
+  for (const s of stack) out.push({index:s.i, length:1, msg:`閉じる「${pairs[s.c]}」が見つかりません`});
+  return out;
+}
+
+function checkIndentMix(t){
+  const lines = t.split('\n'); let pos = 0; const prose = [];
+  for (const l of lines) {
+    const body = l.replace(/^[ \u3000]+/, '');
+    if (body && !OPEN_BRACKETS.test(body)) prose.push({pos, indented: body.length !== l.length, len: l.length - body.length});
+    pos += l.length + 1;
+  }
+  const ind = prose.filter(p => p.indented), non = prose.filter(p => !p.indented);
+  if (!ind.length || !non.length) return [];
+  if (ind.length >= non.length) return non.map(p => ({index:p.pos, length:1, msg:'字下げがありません（他の多くの行は字下げあり）', fix:null, insert:'\u3000'}));
+  return ind.map(p => ({index:p.pos, length:p.len, msg:'字下げがあります（他の多くの行は字下げなし）', fixText:''}));
+}
+
+const YURE_PAIRS = [
+  ['出来る','できる'],['出来ない','できない'],['出来た','できた'],['出来て','できて'],
+  ['分かる','わかる'],['分かった','わかった'],['分からない','わからない'],['分かって','わかって'],
+  ['下さい','ください'],['全て','すべて'],['既に','すでに'],['沢山','たくさん'],['何故','なぜ'],
+  ['綺麗','きれい'],['凄い','すごい'],['凄く','すごく'],['一緒','いっしょ'],['貴方','あなた'],
+  ['頂い','いただい'],['頂き','いただき'],['様々','さまざま'],['殆ど','ほとんど'],['是非','ぜひ'],
+  ['丁度','ちょうど'],['駄目','ダメ'],['一人','ひとり'],['二人','ふたり'],['ヶ月','か月'],
+  ['相変わらず','あいかわらず'],['兎に角','とにかく'],['勿論','もちろん'],['流石','さすが'],['滅茶苦茶','めちゃくちゃ']
+];
+function findAll(t, word){ const r = []; let i = t.indexOf(word); while (i !== -1) { r.push(i); i = t.indexOf(word, i + word.length); } return r; }
+function checkYure(t){
+  const out = [];
+  for (const [a, b] of YURE_PAIRS) {
+    const A = findAll(t, a), B = findAll(t, b);
+    if (!A.length || !B.length) continue;
+    const [minW, minPos, majW, majN, minN] = A.length < B.length ? [a, A, b, B.length, A.length] : [b, B, a, A.length, B.length];
+    for (const i of minPos) out.push({index:i, length:minW.length, msg:`「${minW}」${minN}回 /「${majW}」${majN}回`, fixText:majW});
+  }
+  return out;
+}
+
+function checkLong(t){
+  const out = []; const re = /[^。！？!?\n]+[。！？!?]*/g; let m;
+  while ((m = re.exec(t))) {
+    const s = m[0].replace(/^[ \u3000「『]+/, '');
+    if (s.length > 120) out.push({index:m.index, length:m[0].length, msg:`${s.length}字`});
+  }
+  return out;
+}
+
+// 1ルール分の指摘を集める
+function runRule(rule, t){
+  if (rule.custom) {
+    return rule.custom(t).map(x => ({...x, fixText: x.insert !== undefined ? t.substr(x.index, 0) + x.insert : x.fixText}));
+  }
+  const out = []; rule.re.lastIndex = 0; let m;
+  while ((m = rule.re.exec(t))) {
+    if (m[0].length === 0) { rule.re.lastIndex++; continue; }
+    out.push({index:m.index, length:m[0].length, fixText: rule.fix ? rule.fix(m) : undefined});
+  }
+  return out;
+}
+
+// 「安全な修正」を順番にまとめて適用
+function applySafeFixes(t, enabledIds){
+  let total = 0;
+  for (const rule of RULES) {
+    if (!rule.safe || !enabledIds.has(rule.id) || rule.custom) continue;
+    rule.re.lastIndex = 0;
+    t = t.replace(rule.re, (...a) => {
+      const offIdx = a.findIndex(x => typeof x === 'number');
+      const m = a.slice(0, offIdx);
+      total++;
+      return rule.fix(m);
+    });
+  }
+  return {text:t, count:total};
+}
+
+if (typeof module !== 'undefined') module.exports = {setMemoText, parseMemo, checkMemo, notionJsonToText, htmlToText, formatText, looksDoubleSpaced, RULES, runRule, applySafeFixes};
+</script>
+
+<script>
+'use strict';
+(function(){
+  const $ = id => document.getElementById(id);
+  const ta = $('ta');
+  const LS_KEY = 'novelTool.settings.v1';
+  const defaults = {autoConvert:true, mode:'auto', indent:'keep', maxBlank:-1, disabled:[]};
+  let settings = {...defaults};
+  try { settings = {...defaults, ...JSON.parse(localStorage.getItem(LS_KEY) || '{}')}; } catch(e) {}
+  const storageFail = (what, e) => notify('warn', `${what}を保存できませんでした`, {cause: e && e.name === 'QuotaExceededError' ? 'ブラウザの保存容量がいっぱいです' : 'ブラウザの設定（プライベートモード、サイトデータの保存禁止など）で保存が許可されていない可能性があります（' + errText(e) + '）', fix: 'ブラウザの設定でこのサイトのデータ保存を許可してください。作品メモは「.txtで書き出す」で保存できます。'});
+  const save = () => { try { localStorage.setItem(LS_KEY, JSON.stringify(settings)); } catch(e) { storageFail('設定', e); } };
+
+  const history = [];
+  const snapshot = () => { history.push(ta.value); if (history.length > 50) history.shift(); };
+
+  // 実行結果のポップアップ。type: success / info / warn / error
+  // opts.detail：補足、opts.cause：原因、opts.fix：対処法
+  function notify(type, title, opts = {}){
+    const el = $('toast'); el.textContent = ''; el.className = type;
+    const icons = {success:'✓', info:'ℹ', warn:'⚠', error:'✕'};
+    const h = document.createElement('div'); h.className = 't-title';
+    const ic = document.createElement('span'); ic.className = 't-icon'; ic.textContent = icons[type] || '';
+    h.append(ic, document.createTextNode(title)); el.append(h);
+    if (opts.detail || opts.cause || opts.fix) {
+      const b = document.createElement('div'); b.className = 't-body';
+      const row = (label, text) => { if (!text) return; const d = document.createElement('div'); if (label) { const l = document.createElement('b'); l.textContent = label; d.append(l); } d.append(document.createTextNode(text)); b.append(d); };
+      row('', opts.detail); row('原因：', opts.cause); row('対処：', opts.fix);
+      el.append(b);
+    }
+    const x = document.createElement('button'); x.className = 't-close'; x.textContent = '×'; x.title = '閉じる';
+    x.onclick = () => el.classList.remove('show'); el.append(x);
+    el.setAttribute('role', type === 'error' ? 'alert' : 'status');
+    void el.offsetWidth; el.classList.add('show');
+    clearTimeout(notify.t);
+    const ms = type === 'error' ? 12000 : type === 'warn' ? 8000 : 2600;
+    notify.t = setTimeout(() => el.classList.remove('show'), ms);
+  }
+  const errText = e => (e && ((e.name ? e.name + ': ' : '') + (e.message || String(e)))) || '不明';
+  window.addEventListener('error', e => notify('error', '予期しないエラーが発生しました', {cause: e.message || '不明', fix: 'ページを再読み込み（Ctrl+F5）してもう一度お試しください。本文は先にコピーして控えておくと安心です。くり返し起きる場合は、画面上部の「💬 フィードバック・不具合報告」からお知らせください。'}));
+  window.addEventListener('unhandledrejection', e => notify('error', '予期しないエラーが発生しました', {cause: errText(e.reason), fix: 'ページを再読み込み（Ctrl+F5）してもう一度お試しください。'}));
+
+  function updateCount(){
+    const v = ta.value;
+    const noSpace = v.replace(/[\s\u3000]/g, '').length;
+    const lines = v ? v.split('\n').length : 0;
+    $('count').textContent = `文字数 ${v.replace(/\n/g,'').length}（空白・改行除く ${noSpace}）／ ${lines}行`;
+  }
+
+  // 設定UI
+  $('optAuto').checked = settings.autoConvert;
+  $('optMode').value = settings.mode;
+  $('optIndent').value = settings.indent;
+  $('optMaxBlank').value = settings.maxBlank;
+  $('optAuto').onchange = e => { settings.autoConvert = e.target.checked; save(); };
+  $('optMode').onchange = e => { settings.mode = e.target.value; save(); };
+  $('optIndent').onchange = e => { settings.indent = e.target.value; save(); };
+  $('optMaxBlank').onchange = e => { settings.maxBlank = Number(e.target.value); save(); };
+
+  // チェック項目UI
+  const rulesBox = $('rules');
+  for (const r of RULES) {
+    const lab = document.createElement('label');
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = !settings.disabled.includes(r.id);
+    cb.onchange = () => {
+      settings.disabled = settings.disabled.filter(x => x !== r.id);
+      if (!cb.checked) settings.disabled.push(r.id);
+      save(); if (lastChecked) runCheck();
+    };
+    lab.append(cb, document.createTextNode(r.label));
+    rulesBox.append(lab);
+  }
+  const enabledIds = () => new Set(RULES.map(r => r.id).filter(id => !settings.disabled.includes(id)));
+
+  // ===== 作品メモ =====
+  const MEMO_KEY = 'novelTool.memos.v1';
+  let memos = {current:'', items:{}, toAi:true};
+  try { memos = {...memos, ...JSON.parse(localStorage.getItem(MEMO_KEY) || '{}')}; } catch(e) {}
+  let memoSaveWarned = false;
+  const memoStatus = (cls, text) => { const el = $('memoStatus'); if (!el) return; el.className = 'memo-status ' + cls; el.textContent = text; };
+  const nowStr = () => { const d = new Date(); return `${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`; };
+  const saveMemos = () => {
+    try {
+      localStorage.setItem(MEMO_KEY, JSON.stringify(memos)); memoSaveWarned = false;
+      // 保存できたかを読み直して確かめる
+      const back = JSON.parse(localStorage.getItem(MEMO_KEY) || '{}');
+      if (memos.current && (back.items || {})[memos.current] !== memos.items[memos.current]) throw new Error('保存した内容を読み直せませんでした');
+      memoStatus('ok', memos.current ? `✓ 「${memos.current}」をこのブラウザに保存しました（${nowStr()}）。書くたびに自動で保存されます。` : '');
+    } catch(e) {
+      memoStatus('ng', '⚠ メモを保存できていません。「.txtで書き出す」で控えを取ってください。');
+      if (!memoSaveWarned) storageFail('作品メモ', e); memoSaveWarned = true;
+    }
+  };
+  const memoSel = $('memoSelect'), memoTa = $('memoText');
+  function renderMemoList(){
+    memoSel.textContent = '';
+    const none = document.createElement('option'); none.value = ''; none.textContent = '（使わない）'; memoSel.append(none);
+    for (const name of Object.keys(memos.items).sort()) { const o = document.createElement('option'); o.value = name; o.textContent = name; memoSel.append(o); }
+    if (!(memos.current in memos.items)) memos.current = '';
+    memoSel.value = memos.current;
+    memoTa.value = memos.current ? memos.items[memos.current] : '';
+    if (!memos.current) memoStatus('idle', 'メモを選ぶか、ここに書き始めると新しいメモとして自動で保存されます。');
+    else if (!$('memoStatus').classList.contains('ok')) memoStatus('idle', `「${memos.current}」はこのブラウザに保存されています。書くたびに自動で保存されます。`);
+    $('memoBadge').textContent = memos.current ? `：${memos.current}` : '';
+    setMemoText(memoTa.value);
+    if (lastChecked) runCheck();
+  }
+  const askName = (msg, def) => { const n = (prompt(msg, def || '') || '').trim().replace(/[\\/:*?"<>|]/g, ''); return n; };
+  $('memoToAi').checked = memos.toAi !== false;
+  $('memoToAi').onchange = e => { memos.toAi = e.target.checked; saveMemos(); };
+  memoSel.onchange = () => { memos.current = memoSel.value; saveMemos(); renderMemoList(); };
+  memoTa.addEventListener('input', () => {
+    if (!memos.current) {
+      // メモを選ばずに書き始めたら、自動で新しいメモを作る
+      if (!memoTa.value.trim()) return;
+      let n = '無題のメモ', k = 2; while (memos.items[n] !== undefined) n = `無題のメモ${k++}`;
+      memos.items[n] = memoTa.value; memos.current = n; saveMemos(); renderMemoList();
+      notify('info', `新しいメモ「${n}」として保存しました`, {detail: '「名前を変更」で原作名などに変えられます。'});
+    }
+    memos.items[memos.current] = memoTa.value; saveMemos(); setMemoText(memoTa.value); if (lastChecked) scheduleCheck();
+  });
+  $('memoNew').onclick = () => {
+    const n = askName('新しいメモの名前（原作名やシリーズ名など）');
+    if (!n) return;
+    if (memos.items[n] !== undefined) { notify('error', 'メモを作成できませんでした', {cause: `「${n}」という名前のメモがすでにあります`, fix: '別の名前を付けてください。'}); return; }
+    memos.items[n] = ''; memos.current = n; saveMemos(); renderMemoList(); memoTa.focus();
+    notify('success', `メモ「${n}」を作成しました！`);
+  };
+  $('memoRename').onclick = () => {
+    if (!memos.current) { notify('error', '名前を変更できませんでした', {cause: 'メモが選ばれていません', fix: '「使うメモ」でメモを選んでから押してください。'}); return; }
+    const old = memos.current;
+    const n = askName('新しい名前', old);
+    if (!n || n === old) return;
+    if (memos.items[n] !== undefined) { notify('error', '名前を変更できませんでした', {cause: `「${n}」という名前のメモがすでにあります`, fix: '別の名前を付けてください。'}); return; }
+    memos.items[n] = memos.items[old]; delete memos.items[old]; memos.current = n; saveMemos(); renderMemoList();
+    notify('success', `メモの名前を「${n}」に変更しました！`);
+  };
+  $('memoDelete').onclick = () => {
+    if (!memos.current) { notify('error', 'メモを削除できませんでした', {cause: 'メモが選ばれていません', fix: '「使うメモ」で削除するメモを選んでください。'}); return; }
+    const old = memos.current;
+    if (!confirm(`メモ「${old}」を削除しますか？（先に「.txtで書き出す」で保存しておくと安心です）`)) return;
+    delete memos.items[old]; memos.current = ''; saveMemos(); renderMemoList();
+    notify('success', `メモ「${old}」を削除しました`);
+  };
+  $('memoTemplate').onclick = () => {
+    if (!memos.current) { memos.items['新しいメモ'] = memos.items['新しいメモ'] || ''; memos.current = '新しいメモ'; renderMemoList(); }
+    if (memoTa.value.trim() && !confirm('今のメモの末尾にひな形を追加しますか？')) return;
+    memoTa.value = (memoTa.value.trim() ? memoTa.value.replace(/\s*$/, '\n\n') : '') + MEMO_TEMPLATE;
+    memoTa.dispatchEvent(new Event('input'));
+  };
+  $('memoClear').onclick = () => {
+    if (!memos.current || !memoTa.value) { notify('info', '消す内容がありません', {detail: memos.current ? 'このメモはすでに空です。' : 'メモが選ばれていません。'}); return; }
+    if (!confirm(`メモ「${memos.current}」の内容を消去しますか？（メモの名前は残ります。直後ならCtrl+Zで元に戻せます）`)) return;
+    memoTa.focus(); memoTa.select();
+    let ok = false;
+    try { ok = document.execCommand('delete'); } catch(e) {}
+    if (!ok || memoTa.value) memoTa.value = '';
+    memoTa.dispatchEvent(new Event('input'));
+    notify('success', 'メモの内容を消去しました', {detail: '直後なら Ctrl+Z（Macは⌘+Z）で元に戻せます。'});
+  };
+  $('memoExport').onclick = () => {
+    if (!memos.current) { notify('error', '書き出せませんでした', {cause: 'メモが選ばれていません', fix: '「使うメモ」で書き出すメモを選んでください。'}); return; }
+    if (!memoTa.value.trim()) { notify('warn', '書き出せませんでした', {cause: 'メモの内容が空です', fix: 'メモを書いてから書き出してください。'}); return; }
+    try {
+      const blob = new Blob([memoTa.value.replace(/\r?\n/g, '\r\n')], {type:'text/plain;charset=utf-8'});
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `作品メモ_${memos.current}.txt`;
+      document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      notify('success', '書き出しました！', {detail: `「作品メモ_${memos.current}.txt」を保存しました（通常はダウンロードフォルダに入ります）。`});
+    } catch(e) {
+      notify('error', '書き出せませんでした', {cause: 'ブラウザがファイルの保存を許可しませんでした（' + errText(e) + '）', fix: 'ブラウザのダウンロード設定を確認するか、メモの内容を選択してコピーし、メモ帳などに貼り付けて保存してください。'});
+    }
+  };
+  $('memoImport').onclick = () => $('memoFile').click();
+  $('memoFile').onchange = async e => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    if (f.size > 1024 * 1024) { notify('error', '読み込めませんでした', {cause: `ファイルが大きすぎます（${(f.size/1024/1024).toFixed(1)}MB。上限は1MBです）`, fix: '作品メモの.txtファイルを選んでいるか確認してください。'}); return; }
+    let text;
+    try { text = (await f.text()).replace(/^\uFEFF/, ''); }
+    catch(err) { notify('error', '読み込めませんでした', {cause: 'ファイルを開けませんでした（' + errText(err) + '）', fix: 'ファイルが別のアプリで開かれていないか、移動・削除されていないか確認してください。'}); return; }
+    if (/\u0000/.test(text)) { notify('error', '読み込めませんでした', {cause: 'テキストファイルではないようです', fix: '「.txtで書き出す」で保存したファイル、またはメモ帳などで作った.txtを選んでください。'}); return; }
+    const garbled = (text.match(/\uFFFD/g) || []).length;
+    let n = f.name.replace(/\.txt$/i, '').replace(/^作品メモ_/, '') || '読み込んだメモ';
+    if (memos.items[n] !== undefined && !confirm(`メモ「${n}」はすでにあります。読み込んだ内容で上書きしますか？`)) {
+      n = askName('別の名前で読み込みます。名前を入力してください', n + '（読み込み）'); if (!n) return;
+    }
+    memos.items[n] = text.replace(/\r\n?/g, '\n'); memos.current = n; saveMemos(); renderMemoList();
+    $('memoBox').open = true;
+    if (garbled) notify('warn', `メモ「${n}」を読み込みましたが、文字化けしている可能性があります`, {cause: 'ファイルの文字コードがUTF-8ではないようです（Shift_JISなど）', fix: 'メモ帳でファイルを開き、「名前を付けて保存」で文字コードを「UTF-8」にして保存し直してから、もう一度読み込んでください。'});
+    else notify('success', '読み込みました！', {detail: `メモ「${n}」を読み込みました。`});
+  };
+
+  function insertText(text){
+    ta.focus();
+    let ok = false;
+    try { ok = document.execCommand('insertText', false, text); } catch(e) {}
+    if (!ok) ta.setRangeText(text, ta.selectionStart, ta.selectionEnd, 'end');
+    ta.dispatchEvent(new Event('input'));
+  }
+
+  // 貼り付けの診断情報（本文の文字は含めず、データの種類・構造・文字数だけを記録する）
+  let lastPasteDiag = null;
+  function maskJson(v, key, depth){
+    if (depth > 12) return '…';
+    if (typeof v === 'string') return /^(id|blockId|parent_id|space_id|spaceId|type|parent_table|table)$/.test(key || '') ? (key === 'type' || key === 'table' || key === 'parent_table' ? v : '<id>') : `<文字${v.length}>`;
+    if (Array.isArray(v)) { const a = v.slice(0, 4).map(x => maskJson(x, key, depth + 1)); if (v.length > 4) a.push(`…ほか${v.length - 4}件`); return a; }
+    if (v && typeof v === 'object') { const o = {}; let n = 0; for (const k in v) { if (n++ > 30) { o['…'] = 'ほか省略'; break; } o[/^[0-9a-f-]{32,36}$/.test(k) ? '<id>' : k] = maskJson(v[k], k, depth + 1); } return o; }
+    return v;
+  }
+  function makeDiag(cd){
+    const types = [...(cd.types || [])];
+    const d = {when: new Date().toISOString(), browser: navigator.userAgent, types: {}};
+    for (const t of types) {
+      let v = ''; try { v = cd.getData(t); } catch(e) { d.types[t] = '読めません: ' + errText(e); continue; }
+      const info = {length: v.length};
+      if (/_notion/.test(t)) { try { info.structure = maskJson(JSON.parse(v), '', 0); } catch(e) { info.structure = '(JSONではない)'; } }
+      else if (t === 'text/html') info.tags = (v.match(/<\/?[a-zA-Z][a-zA-Z0-9-]*|<!--[^>]{0,30}/g) || []).slice(0, 60).map(s => s.replace(/notionvc: .*/, 'notionvc'));
+      else if (t === 'text/plain') info.lineBreaks = (v.match(/(\r?\n)+/g) || []).slice(0, 40).map(s => s.replace(/\r/g, '').length);
+      d.types[t] = info;
+    }
+    return d;
+  }
+  $('btnDiag').onclick = async () => {
+    if (!lastPasteDiag) { notify('info', '診断情報がまだありません', {detail: 'Notionからコピーした本文を一度入力欄に貼り付けてから、このボタンを押してください。'}); return; }
+    const r = await copyText('【小説整形ツール 貼り付け診断情報（本文は含まれていません）】\n' + JSON.stringify(lastPasteDiag, null, 1));
+    if (r.ok) notify('success', '診断情報をコピーしました！', {detail: '本文の文字は含まれていません（データの種類・構造・文字数のみ）。不具合の報告にお使いください。'});
+    else notify('error', 'コピーできませんでした', {cause: r.cause});
+  };
+
+  // 貼り付け時の変換
+  ta.addEventListener('paste', e => {
+    if (e.clipboardData) { try { lastPasteDiag = makeDiag(e.clipboardData); } catch(err) { lastPasteDiag = {error: errText(err)}; } }
+    if (!settings.autoConvert || !e.clipboardData) return;
+    const html = e.clipboardData.getData('text/html');
+    const plain = e.clipboardData.getData('text/plain');
+    let text = '', exact = false, msg = '';
+    // Notionのブロック情報（空行を含む）を、届いた独自形式のデータから順に探す
+    const notionTypes = [...(e.clipboardData.types || [])].filter(t => /_notion/.test(t) && !/page-source|_notion-text-production/.test(t));
+    notionTypes.sort((a, b) => (/multi-text/.test(b) ? 1 : 0) - (/multi-text/.test(a) ? 1 : 0));
+    for (const t of notionTypes) {
+      let j = ''; try { j = e.clipboardData.getData(t); } catch(err) {}
+      if (!j) continue;
+      try { text = notionJsonToText(j, plain) || ''; } catch(err) { text = ''; }
+      if (text.trim()) { exact = true; msg = 'Notionの改行・空行をそのまま再現して貼り付けました'; break; }
+    }
+    const types = [...(e.clipboardData.types || [])];
+    const fromNotion = types.some(t => /_notion/.test(t)) || /notionvc/.test(html);
+    if (!text.trim() && fromNotion && plain) {
+      // NotionのHTMLはブロック内の改行（Shift+Enter）が消えるため、普通のテキストを使う。
+      // 普通のテキストでは、ブロックの区切りが空行1つ、ブロック内の改行が改行1つになっている。
+      text = normalizeNewlines(plain).replace(/\n\n/g, '\n');
+      exact = true;
+      if (types.some(t => /_notion-text-production/.test(t))) msg = 'Notionの改行をそのまま再現して貼り付けました';
+      else msg = '改行は整えましたが、Notionの空行は読み取れませんでした（ChromeかEdgeで開くと再現できます）';
+    }
+    if (!text.trim() && html) {
+      try { text = htmlToText(html, new DOMParser()); } catch(err) { text = ''; }
+    }
+    if (!text.trim()) text = plain;
+    if (!text) return;
+    e.preventDefault();
+    const before = text;
+    text = formatText(text, settings, exact);
+    insertText(text);
+    if (/読み取れませんでした/.test(msg)) notify('warn', '貼り付けましたが、Notionの空行を読み取れませんでした', {detail: '受け取ったデータ：' + types.join(', '), cause: 'Notionから空行の情報（ブロック情報）が届かなかったか、対応していない形式でした', fix: 'Notionで本文を「文字としてドラッグ選択」してコピーし直してみてください。改善しない場合は「整形の設定」→「🩺 貼り付けの診断情報をコピー」の内容を、画面上部の「💬 フィードバック・不具合報告」から送ってください。'});
+    else notify('success', '貼り付けました！', {detail: msg || (before !== text ? '改行を整えて貼り付けました。' : '')});
+  });
+
+  ta.addEventListener('input', () => { updateCount(); if (lastChecked) scheduleCheck(); });
+
+  $('btnFormat').onclick = () => {
+    snapshot(); ta.value = formatText(ta.value, settings); updateCount();
+    if (lastChecked) runCheck(); notify('success', '整形しました！');
+  };
+
+  async function copyText(text){
+    let first = null;
+    try { await navigator.clipboard.writeText(text); return {ok:true}; } catch(e) { first = e; }
+    const tmp = document.createElement('textarea'); tmp.value = text; tmp.style.position = 'fixed'; tmp.style.opacity = '0';
+    document.body.append(tmp); tmp.select(); let ok = false;
+    try { ok = document.execCommand('copy'); } catch(e) {}
+    tmp.remove(); ta.focus();
+    if (ok) return {ok:true};
+    let cause = 'ブラウザがクリップボードへの書き込みを許可しませんでした';
+    if (first && first.name === 'NotAllowedError') cause += '（ブラウザの設定で、このページのクリップボードへのアクセスが禁止されている可能性があります）';
+    else if (!navigator.clipboard) cause += '（このブラウザまたは開き方では、クリップボード機能が使えません）';
+    else if (first) cause += '（' + errText(first) + '）';
+    return {ok:false, cause};
+  }
+
+  $('btnCopy').onclick = async () => {
+    const text = ta.value.replace(/\r\n?/g, '\n');
+    if (!text.trim()) { notify('error', 'コピーできませんでした', {cause: '本文が空です', fix: 'Notionからコピーした本文を入力欄に貼り付けてから押してください。'}); return; }
+    const r = await copyText(text);
+    if (r.ok) notify('success', 'コピーしました！', {detail: `${text.replace(/\n/g,'').length}文字をコピーしました。pixivの投稿画面に貼り付けてください。`});
+    else notify('error', 'コピーできませんでした', {cause: r.cause, fix: '入力欄をクリックして Ctrl+A（全選択）→ Ctrl+C で手動コピーしてください。'});
+  };
+
+  $('btnAi').onclick = async () => {
+    const text = ta.value;
+    if (!text.trim()) { notify('error', 'コピーできませんでした', {cause: '本文が空です', fix: '校正したい本文を入力欄に貼り付けてから押してください。'}); return; }
+    const memoOn = memos.current && memos.toAi !== false && memoTa.value.trim();
+    const numbered = text.replace(/\r\n?/g, '\n').split('\n').map((l, k) => `${k + 1}|${l}`).join('\n');
+    const prompt = [
+      'あなたは日本語の小説の校正者です。以下の本文から、次の誤りを漏れなく探してください。',
+      '',
+      '【最優先で探すもの】',
+      '・誤字、脱字、衍字（余計な文字。例：「表情にででる」→「表情にでる」）',
+      '・変換ミス、同音異義語の誤り（例：体の部位の「根本」→「根元」）',
+      '・登場人物名や用語の打ち間違い' + (memoOn ? '（設定メモの表記を正とする）' : ''),
+      '・助詞の誤りや抜け、活用の誤り、係り受けの誤り、主語と述語のねじれ',
+      '',
+      '【次に探すもの】',
+      '・意味が通りにくい文、読み手が誤解しそうな文',
+      '・近い位置での同じ言葉の不自然なくり返し',
+      memoOn ? '・設定メモとの矛盾（一人称、呼び方、設定など）' : '・人物の呼び方や一人称のぶれ',
+      '',
+      '【守ってほしいこと】',
+      '・作者の文体（ひらがなに開く表記、台詞の口語や崩し、意図的な反復、記号の使い方、改行や空行）は誤りとして扱わない',
+      '・修正案は誤りを直す最小限にとどめ、文章を書き直さない',
+      '・確信が持てないものは、下の「要確認」の表に分けて挙げる',
+      '・本文の各行の先頭には「行番号|」を付けてある。指摘には必ずその行番号を書く（行番号自体は本文ではない）',
+      '',
+      '【出力の形式】',
+      '次の列のMarkdownの表で、本文の登場順に並べてください。誤りがなければ「指摘なし」とだけ書いてください。',
+      '| 行 | 該当箇所（前後数文字を含めて引用） | 修正案 | 種類 | 理由（短く） |',
+      '表のあとに、確信が持てないものを同じ形式の「要確認」の表にしてください。前置きや感想は不要です。'
+    ].join('\n') +
+      (memoOn ? '\n\n---設定メモここから---\n' + memoTa.value.trim() + '\n---設定メモここまで---' : '') +
+      '\n\n---本文ここから---\n' + numbered + '\n---本文ここまで---';
+    const r = await copyText(prompt);
+    const withMemo = /設定メモここから/.test(prompt);
+    if (r.ok) notify('success', 'コピーしました！', {detail: `AIへの依頼文${withMemo ? '・作品メモ' : ''}・行番号つきの本文をコピーしました。ClaudeなどのAIに貼り付けてください。結果の「行」は右側の「行へ移動」で探せます。`});
+    else notify('error', 'コピーできませんでした', {cause: r.cause, fix: 'ブラウザの設定でクリップボードへのアクセスを許可するか、ページを再読み込みしてもう一度お試しください。'});
+  };
+
+  $('btnClear').onclick = () => { if (!ta.value || confirm('本文を消去しますか？（「元に戻す」で復元できます）')) { snapshot(); ta.value = ''; updateCount(); lastChecked = false; renderIssues([]); } };
+  $('btnUndo').onclick = () => { if (!history.length) { notify('info', '戻せる操作がありません', {detail: 'このボタンは「まとめて適用」「整形」「クリア」を取り消せます。手で入力した変更は Ctrl+Z（Macは⌘+Z）で戻せます。'}); return; } ta.value = history.pop(); updateCount(); if (lastChecked) runCheck(); notify('success', '元に戻しました！'); };
+
+  $('btnFixAll').onclick = () => {
+    const ids = enabledIds();
+    const res = applySafeFixes(ta.value, ids);
+    if (!ta.value.trim()) { notify('error', '修正できませんでした', {cause: '本文が空です', fix: '本文を貼り付けてから押してください。'}); return; }
+    if (!res.count) { notify('info', 'まとめて直せる箇所はありませんでした', {detail: '残りの指摘は、内容を確認してから1件ずつ直してください。'}); return; }
+    snapshot(); ta.value = res.text; updateCount(); runCheck();
+    notify('success', `${res.count}箇所を修正しました！`, {detail: '「↩ 元に戻す」で取り消せます。'});
+  };
+
+  // ===== チェック結果の表示 =====
+  let lastChecked = false, checkTimer = null, lastTotal = 0, lastCheckedAt = '';
+  const scheduleCheck = () => { clearTimeout(checkTimer); checkTimer = setTimeout(runCheck, 600); };
+
+  function lineStarts(t){ const s = [0]; for (let i = 0; i < t.length; i++) if (t[i] === '\n') s.push(i + 1); return s; }
+  function lineOf(starts, idx){ let lo = 0, hi = starts.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid] <= idx) lo = mid; else hi = mid - 1; } return lo; }
+
+  function jump(i, len){
+    const total = Math.max(1, ta.value.length);
+    ta.scrollTop = Math.max(0, (i / total) * ta.scrollHeight - ta.clientHeight / 3);
+    ta.setSelectionRange(i, i); ta.blur(); ta.focus();
+    ta.setSelectionRange(i, i + Math.max(len, 1));
+  }
+
+  function applyOne(issue, ruleId){
+    const t = ta.value;
+    if (t.substr(issue.index, issue.length) !== issue.text) { runCheck(); notify('warn', 'この指摘は修正できませんでした', {cause: '指摘を出したあとに、該当箇所の本文が変わっています', fix: '最新の状態で再チェックしたので、一覧からもう一度選んでください。'}); return; }
+    ta.focus(); ta.setSelectionRange(issue.index, issue.index + issue.length);
+    insertText(issue.fixText);
+    runCheck();
+    notify('success', '修正しました！');
+  }
+
+  function runCheck(){
+    lastChecked = true;
+    const t = ta.value, ids = enabledIds(), groups = [];
+    for (const r of RULES) {
+      if (!ids.has(r.id)) continue;
+      const list = runRule(r, t).map(x => ({...x, text: t.substr(x.index, x.length)}));
+      if (list.length) groups.push({rule:r, list});
+    }
+    renderIssues(groups, t);
+  }
+
+  function renderIssues(groups, t){
+    const box = $('issues'); box.textContent = '';
+    const total = groups.reduce((n, g) => n + g.list.length, 0);
+    lastTotal = total;
+    if (lastChecked) { const d = new Date(); lastCheckedAt = `${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`; }
+    $('summary').textContent = lastChecked ? (total ? `指摘 ${total}件` : '指摘はありません 🎉') : '校正チェック';
+    if (lastChecked) { const tm = document.createElement('span'); tm.className = 'checked-at'; tm.textContent = `${lastCheckedAt} 時点（本文を直すと自動で更新されます）`; $('summary').append(tm); }
+    if (!lastChecked) return;
+    const hint = document.createElement('div'); hint.className = 'ai-hint';
+    hint.textContent = '💡 このチェックは決まった形のものだけを見つける一次チェックです。誤字・脱字・変換ミス・文法の誤りは、仕上げに「🤖 AI校正用にコピー」でAIに確認してもらいましょう（結果の「行」は上の「行へ移動」で探せます）。';
+    if (!total) { const p = document.createElement('p'); p.className = 'empty'; p.textContent = 'ルールで見つかる問題はありませんでした。'; box.append(p, hint); return; }
+    const starts = lineStarts(t);
+    for (const g of groups) {
+      const h = document.createElement('div'); h.className = 'group';
+      const b = document.createElement('span'); b.className = 'badge lv-' + g.rule.level; b.textContent = g.rule.level === 'warn' ? '要確認' : '参考';
+      h.append(b, document.createTextNode(`${g.rule.label}（${g.list.length}）`));
+      const d = document.createElement('p'); d.className = 'desc'; d.textContent = g.rule.desc;
+      const ul = document.createElement('ul'); ul.className = 'items';
+      for (const it of g.list.slice(0, 300)) {
+        const li = document.createElement('li');
+        const ln = document.createElement('span'); ln.className = 'ln'; ln.textContent = (lineOf(starts, it.index) + 1) + '行';
+        const sn = document.createElement('span'); sn.className = 'snip';
+        const a = Math.max(0, it.index - 12), z = Math.min(t.length, it.index + it.length + 12);
+        const mk = document.createElement('mark'); mk.textContent = it.length ? t.slice(it.index, it.index + it.length).replace(/\n/g,'↵') || '▯' : '▯';
+        sn.append(document.createTextNode(t.slice(a, it.index).replace(/\n/g,'↵')), mk, document.createTextNode(t.slice(it.index + it.length, z).replace(/\n/g,'↵')));
+        if (it.msg) { const m = document.createElement('div'); m.className = 'desc'; m.textContent = it.msg; sn.append(m); }
+        li.append(ln, sn);
+        if (it.fixText !== undefined && it.fixText !== null) {
+          const fb = document.createElement('button'); fb.className = 'small';
+          fb.textContent = it.fixText === '' ? '削除' : `→「${it.fixText.replace(/\u3000/g,'␣')}」`;
+          if (g.rule.id === 'indentMix' && it.length === 1 && it.fixText !== '') { it.length = 0; it.text = ''; fb.textContent = '字下げを付ける'; }
+          fb.onclick = ev => { ev.stopPropagation(); applyOne(it, g.rule.id); };
+          li.append(fb);
+        }
+        li.onclick = () => jump(it.index, it.length);
+        ul.append(li);
+      }
+      box.append(h, d, ul);
+    }
+    box.append(hint);
+  }
+
+  const gotoLine = () => {
+    const n = parseInt($('gotoLine').value, 10);
+    const lines = ta.value.split('\n');
+    if (!n || n < 1) { notify('error', '移動できませんでした', {cause: '行番号が入っていません', fix: 'AI校正の結果の「行」の数字を入れてください。'}); return; }
+    if (n > lines.length) { notify('error', '移動できませんでした', {cause: `本文は${lines.length}行までです（${n}行目はありません）`, fix: 'AIに送ったあとで本文の行が増減していないか確認してください。'}); return; }
+    let start = 0; for (let k = 0; k < n - 1; k++) start += lines[k].length + 1;
+    jump(start, lines[n - 1].length);
+    notify('success', `${n}行目に移動しました`);
+  };
+  $('gotoBtn').onclick = gotoLine;
+  $('gotoLine').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); gotoLine(); } });
+
+  $('btnCheck').onclick = () => {
+    if (!ta.value.trim()) { notify('error', 'チェックできませんでした', {cause: '本文が空です', fix: '本文を貼り付けてから押してください。'}); return; }
+    if (!enabledIds().size) { notify('warn', 'チェックする項目がありません', {cause: 'チェック項目がすべてオフになっています', fix: '右側の「チェック項目の選択」で項目をオンにしてください。'}); return; }
+    const before = lastChecked ? lastTotal : null;
+    runCheck();
+    const aside = document.querySelector('aside'); aside.scrollTop = 0;
+    const s = $('summary'); s.classList.remove('flash'); void s.offsetWidth; s.classList.add('flash');
+    if (before === null) notify('success', 'チェックしました！', {detail: lastTotal ? `指摘が ${lastTotal}件 あります。右側の一覧を確認してください。` : '指摘はありません。'});
+    else if (before === lastTotal) notify('success', '再チェックしました！', {detail: `指摘 ${lastTotal}件（変化なし）`});
+    else notify('success', '再チェックしました！', {detail: `指摘 ${before}件 → ${lastTotal}件`});
+  };
+  renderMemoList();
+  updateCount();
+})();
+</script>
+</body>
+</html>
