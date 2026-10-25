@@ -51,7 +51,9 @@ select,input[type=number]{font:inherit;padding:4px 6px;border:1px solid var(--li
 #memoText{width:100%;min-height:160px;resize:vertical;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);padding:10px 12px;font:inherit;line-height:1.7}
 .memo-foot{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center;margin-top:6px;font-size:13px}
 .memo-foot label.row{display:flex;gap:6px;align-items:center}
-main{flex:1;display:flex;gap:12px;padding:0 16px 16px;min-height:0}
+main{flex:1;display:flex;gap:12px;padding:0 16px 8px;min-height:0}
+footer.disclaimer{padding:0 16px 10px;font-size:11px;line-height:1.6;color:var(--muted)}
+footer.disclaimer strong{font-weight:600}
 .editor{flex:1.6;display:flex;min-width:0}
 textarea#ta{flex:1;width:100%;resize:none;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text);padding:14px 16px;font-size:15px;line-height:1.8;font-family:"Hiragino Mincho ProN","Yu Mincho","YuMincho",serif}
 textarea#ta:focus{outline:2px solid var(--accent);outline-offset:-1px}
@@ -188,6 +190,7 @@ ul.items li:hover{background:var(--btn)}
     <div id="issues"><p class="empty">「校正チェック」を押すと、ここに指摘が出ます。指摘をクリックすると本文の該当箇所に移動します。</p></div>
   </aside>
 </main>
+<footer class="disclaimer">このツールは個人が作成した<strong>非公式</strong>のツールで、pixiv・Notionおよびその運営会社とは関係ありません。ご利用は自己責任でお願いします。本ツールの利用によって生じたいかなる損害についても、作成者は責任を負いません。大切な原稿は、元のデータを必ず残したうえでご利用ください。</footer>
 <div id="toast" role="status" aria-live="polite"></div>
 
 <script id="core">
