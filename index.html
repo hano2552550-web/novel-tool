@@ -3,8 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<!-- 安全のため：このページは外部へ一切通信できないように設定しています -->
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'">
+<!-- 安全のため：このページは外部へ一切通信できないように設定しています。
+     例外は、同じサイトに置いた「詳細チェック」用のワーカー（deep/）が辞書ファイルを読み込むことだけで、本文は送信しません。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; worker-src 'self'; style-src 'unsafe-inline'; img-src data:; form-action 'none'; base-uri 'none'">
 <title>小説 整形・校正ツール</title>
 <style>
 :root{
@@ -340,19 +341,21 @@ function webHtmlToText(html, parser){
   return out;
 }
 
-// 本文をNotionのブロック情報に変換する（1行＝1ブロック、空行＝空のブロック、[chapter:…]＝見出し）
-function textToNotionBlocks(text){
-  const uuid = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() :
-    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); });
+// 本文を、Notionに貼り付けたときに「1行＝1ブロック、空行＝空のブロック」になる普通のテキストにする。
+// ・Notionは普通のテキストを、空行（改行2つ）でブロックに分ける。そこで1行ごとに改行2つで区切る。
+// ・各行の先頭に見えない文字（ゼロ幅スペース U+200B）を付ける。Notionは貼り付け時にこれを取り除くが、
+//   付けておくことで「行頭の字下げが消える」「- や 1. で始まる行がリストになる」のを防げる。
+//   空行は見えない文字だけの行になり、Notionでは空のブロックになる。
+// ・pixivの章見出し [chapter:…] は「## 見出し」にして、Notionの見出しブロックにする。
+// （Notion独自のブロック形式は、行数が多いとNotion側の複製処理に回って失敗するため使わない）
+function textToNotionPlain(text){
   const lines = normalizeNewlines(text).replace(/^\n+|\n+$/g, '').split('\n');
-  const blocks = lines.map(l => {
-    const id = uuid(), v = {id, type:'text', alive:true};
+  const out = lines.map(l => {
     const m = l.match(/^\[chapter:(.*)\]$/);
-    if (m) { v.type = 'sub_header'; if (m[1].trim()) v.properties = {title:[[m[1].trim()]]}; }
-    else if (l !== '') v.properties = {title:[[l]]};
-    return {blockId:id, blockSubtree:{__version__:3, block:{[id]:{value:v}}}};
+    if (m && m[1].trim()) return '## ' + m[1].trim();
+    return '​' + l;
   });
-  return {json: JSON.stringify({blocks}), count: lines.length};
+  return {text: out.join('\n\n'), count: lines.length};
 }
 
 function normalizeNewlines(t){
@@ -396,6 +399,11 @@ function formatText(t, opt, exact){
 /* ========== 校正ルール ========== */
 // level: warn=直したほうがよい / info=参考（意図的ならOK）
 // safe: 「まとめて適用」の対象になるか
+/* ========== 詳細チェック（辞書を使う校正）の結果置き場 ========== */
+// ワーカーが返した結果を、同じ本文に対してだけ使う
+const DEEP = {text: null, results: null};
+const deepRule = key => t => (DEEP.text === t && DEEP.results && DEEP.results[key]) ? DEEP.results[key].map(x => ({...x})) : [];
+
 const RULES = [
   { id:'halfExcl', label:'半角の「!」「?」', level:'warn', safe:true,
     re:/(?<![A-Za-z0-9])[!?]+(?![A-Za-z0-9])/g,
@@ -458,6 +466,18 @@ const RULES = [
     desc:'地の文で、行頭に全角スペースがある行とない行が混在しています（少数派を指摘）。' },
   { id:'yure', label:'表記ゆれ', level:'info', safe:false, custom:checkYure,
     desc:'同じ言葉が漢字・ひらがなで混在しています。キャラごとの書き分けなど意図的ならOKです。' },
+  { id:'deepSuccessive', label:'【詳細】同じ助詞・助動詞の連続', level:'warn', safe:false, custom:deepRule('successive'), deep:true,
+    desc:'「がが」「のの」のように、同じ助詞・助動詞が続いている箇所です（辞書で単語に分けて判定）。' },
+  { id:'deepVerbDup', label:'【詳細】言葉の重なり（ででる 等）', level:'warn', safe:false, custom:t => [...deepRule('verbDup')(t), ...deepRule('adjDup')(t), ...deepRule('oddAux')(t)].sort((a, b) => a.index - b.index), deep:true,
+    desc:'「表情にででる」「かわいいい」「そのとおりり」のように、文字が重なっている可能性がある箇所です（辞書で単語に分けて判定）。' },
+  { id:'deepJoshi', label:'【詳細】助詞の重なり（私は彼は 等）', level:'warn', safe:false, custom:deepRule('doubledJoshi'), deep:true,
+    desc:'同じ助詞がすぐ近くで重なっている箇所です。台詞などで意図的ならそのままでOKです。' },
+  { id:'deepUnknown', label:'【詳細】辞書にないひらがなの言葉', level:'info', safe:false, custom:deepRule('unknownKana'), deep:true,
+    desc:'辞書に載っていない、ひらがなだけの言葉です。打ち間違いでないか確認してください（造語・方言・口調の崩しならOK）。' },
+  { id:'deepAlpha', label:'【詳細】日本語に混じった英字（変換ミス）', level:'warn', safe:false, custom:deepRule('strayAlpha'), deep:true,
+    desc:'「行こうkと」のように、日本語の中に英字が1〜2文字混じっている箇所です（変換を確定するときのミスの可能性）。' },
+  { id:'deepYure', label:'【詳細】読みが同じ言葉の表記ゆれ', level:'info', safe:false, custom:deepRule('yureReading'), deep:true,
+    desc:'「出来る／できる」「事／こと」のように、同じ読みの言葉が漢字とかなで混在している箇所です（辞書で判定）。' },
   { id:'saire', label:'さ入れ言葉', level:'warn', safe:false, custom:checkSaire,
     desc:'「読まさせる」→「読ませる」のように、不要な「さ」が入っている表現です。' },
   { id:'inuki', label:'い抜き言葉（地の文）', level:'info', safe:false, custom:checkInuki,
@@ -551,6 +571,10 @@ function checkMemo(t){
     // 途中の1文字だけ違うもの（なつめ→なすめ）。最初・最後の文字の違いは別の言葉と区別できないため対象外
     const kind = c => /[ぁ-ゖ]/.test(c) ? 'h' : /[ァ-ヺ]/.test(c) ? 'k' : /[一-龠々]/.test(c) ? 'c' : 'o';
     const ta_ = [...term];
+    // ローマ字入力で起きやすい打ち間違い（子音が同じ＝同じ行、または母音が同じ＝同じ段）のときだけ
+    const ROWS = ['あいうえお','かきくけこ','がぎぐげご','さしすせそ','ざじずぜぞ','たちつてと','だぢづでど','なにぬねの','はひふへほ','ばびぶべぼ','ぱぴぷぺぽ','まみむめも','やいゆえよ','らりるれろ','わいうえを'];
+    const pos = c => { c = toHira(c); for (let r = 0; r < ROWS.length; r++) { const k = ROWS[r].indexOf(c); if (k !== -1) return [r, k]; } return null; };
+    const similar = (a, b) => { const p = pos(a), q = pos(b); return !!(p && q && (p[0] === q[0] || p[1] === q[1])); };
     if (ta_.length >= 3) {
       for (let i = 0; i + ta_.length <= t.length; i++) {
         if (t[i] !== ta_[0] || t[i + ta_.length - 1] !== ta_[ta_.length - 1]) continue;
@@ -561,6 +585,8 @@ function checkMemo(t){
           diff = j;
         }
         if (bad || diff === -1) continue;
+        // かなの名前は、ローマ字入力で起きやすい違い（なつめ→ながめ のような別の言葉は除く）のときだけ
+        if (/[hk]/.test(kind(ta_[diff])) && !similar(t[i + diff], ta_[diff])) continue;
         const cand = t.substr(i, ta_.length);
         if (terms.includes(cand) || overlapsExact(i, i + ta_.length)) continue;
         push(i, ta_.length, `「${term}」の打ち間違いかもしれません（作品メモに登録された名前）`, term);
@@ -570,10 +596,6 @@ function checkMemo(t){
       const L = ta_.length;
       const before = c => !c || !/[ぁ-ゖー]/.test(c);
       const after = c => !c || /[のはがをにもとへや、。！？!?」』）)…―ちくさ\s　]/.test(c);
-      // ローマ字入力で起きやすい打ち間違い（子音が同じ＝同じ行、または母音が同じ＝同じ段）のときだけ
-      const ROWS = ['あいうえお','かきくけこ','がぎぐげご','さしすせそ','ざじずぜぞ','たちつてと','だぢづでど','なにぬねの','はひふへほ','ばびぶべぼ','ぱぴぷぺぽ','まみむめも','やいゆえよ','らりるれろ','わいうえを'];
-      const pos = c => { c = toHira(c); for (let r = 0; r < ROWS.length; r++) { const k = ROWS[r].indexOf(c); if (k !== -1) return [r, k]; } return null; };
-      const similar = (a, b) => { const p = pos(a), q = pos(b); return !!(p && q && (p[0] === q[0] || p[1] === q[1])); };
       for (let i = 0; i + L <= t.length; i++) {
         let diff = -1, bad = false;
         for (let j = 0; j < L; j++) {
@@ -643,8 +665,9 @@ function checkRepeat(t){
     const words = {}; const re = /[一-龠々]{2,}/g; let m;
     while ((m = re.exec(s.text))) {
       const w = m[0]; if (memoNames.has(w)) continue;
-      if (words[w] !== undefined) out.push({index:s.start + m.index, length:w.length, msg:`同じ文の中で「${w}」がくり返されています`});
-      else words[w] = m.index;
+      // 「大切に大切に」のようにすぐ隣で重ねる強調は除く
+      if (words[w] !== undefined && m.index - (words[w] + w.length) > 3) out.push({index:s.start + m.index, length:w.length, msg:`同じ文の中で「${w}」がくり返されています`});
+      words[w] = m.index;
     }
   }
   return out.sort((a, b) => a.index - b.index);
@@ -912,7 +935,7 @@ const TARI_ONOMA = /(ば|ぴ|ゆ|ぐ|が|ぼ|ひ|あ|ぽ|さ|ぱ|や|ぴ|べ|ぺ
 function checkTari(t){
   const out = [];
   for (const s of splitSentences(t)) {
-    const all = [...s.text.matchAll(/[だた]り/g)].filter(m => !TARI_ONOMA.test(s.text.slice(Math.max(0, m.index - 2), m.index + 2)) && !/(ふ|ひと|あ|ぴっ|ば|ふた)$/.test(s.text.slice(0, m.index)) && !/^(たりない|たりる)/.test(s.text.slice(m.index)));
+    const all = [...s.text.matchAll(/[だた]り/g)].filter(m => !TARI_ONOMA.test(s.text.slice(Math.max(0, m.index - 2), m.index + 2)) && !/(ふ|ひと|あ|ぴっ|ば|ふた|当|辺|仕来|しき|罷|ゆっ|ばっ|ぐっ|ぴっ|ぼっ|ひっ|がっ|ぱっ|ま|も)$/.test(s.text.slice(0, m.index)) && !/^(たりない|たりる)/.test(s.text.slice(m.index)));
     // 「〜たりする」「〜たりも」のように例示で1つだけ使うのは一般的なので、それ以外（〜たり踊る など）だけ指摘
     if (all.length === 1 && !/^[だた]り(する|して|した|しない|しま|せず|も|と|は|など|なんか|なんて|でき)/.test(s.text.slice(all[0].index))) out.push({index:s.start + all[0].index, length:2, msg:'「〜たり〜たりする」の「たり」が1つだけです。並べる場合は「〜たり、〜たりする」とそろえるのが一般的です'});
   }
@@ -1071,7 +1094,7 @@ function applySafeFixes(t, enabledIds){
   return {text:t, count:total};
 }
 
-if (typeof module !== 'undefined') module.exports = {analyzeText, webHtmlToText, textToNotionBlocks, setMemoText, parseMemo, checkMemo, notionJsonToText, htmlToText, formatText, looksDoubleSpaced, RULES, runRule, applySafeFixes};
+if (typeof module !== 'undefined') module.exports = {analyzeText, webHtmlToText, textToNotionPlain, setMemoText, parseMemo, checkMemo, notionJsonToText, htmlToText, formatText, looksDoubleSpaced, RULES, runRule, applySafeFixes};
 </script>
 
 <script>
@@ -1197,7 +1220,7 @@ if (typeof module !== 'undefined') module.exports = {analyzeText, webHtmlToText,
       memos.items[n] = memoTa.value; memos.current = n; saveMemos(); renderMemoList();
       notify('info', `新しいメモ「${n}」として保存しました`, {detail: '「名前を変更」で原作名などに変えられます。'});
     }
-    memos.items[memos.current] = memoTa.value; saveMemos(); setMemoText(memoTa.value); if (lastChecked) scheduleCheck();
+    memos.items[memos.current] = memoTa.value; saveMemos(); setMemoText(memoTa.value); DEEP.text = null; if (lastChecked) scheduleCheck();
   });
   $('memoNew').onclick = () => {
     const n = askName('新しいメモの名前（原作名やシリーズ名など）');
@@ -1376,25 +1399,13 @@ if (typeof module !== 'undefined') module.exports = {analyzeText, webHtmlToText,
   }
 
   // Notion用にコピー：Notion独自の形式でクリップボードに入れると、空行（空のブロック）まで再現される
-  $('btnCopyNotion').onclick = () => {
+  $('btnCopyNotion').onclick = async () => {
     const text = ta.value;
     if (!text.trim()) { notify('error', 'コピーできませんでした', {cause: '本文が空です', fix: 'pixivの閲覧ページなどからコピーした本文を入力欄に貼り付けてから押してください。'}); return; }
-    let nb;
-    try { nb = textToNotionBlocks(text); } catch(e) { notify('error', 'コピーできませんでした', {cause: 'Notion用のデータを作れませんでした（' + errText(e) + '）'}); return; }
-    const plainOut = normalizeNewlines(text).replace(/^\n+|\n+$/g, '');
-    let done = false;
-    const onCopy = ev => {
-      ev.preventDefault();
-      ev.clipboardData.setData('text/plain', plainOut);
-      ev.clipboardData.setData('text/_notion-blocks-v3-production', nb.json);
-      done = true;
-    };
-    document.addEventListener('copy', onCopy, true);
-    let ok = false;
-    try { ok = document.execCommand('copy'); } catch(e) {}
-    document.removeEventListener('copy', onCopy, true);
-    if (ok && done) notify('success', 'Notion用にコピーしました！', {detail: `${nb.count}行を、改行・空行を保ったままコピーしました。Notionのページに貼り付けてください（1行が1ブロックになります）。`});
-    else notify('error', 'コピーできませんでした', {cause: 'ブラウザがクリップボードへの書き込みを許可しませんでした', fix: 'Chrome または Edge で開き、ページを再読み込みしてからもう一度お試しください。'});
+    const nb = textToNotionPlain(text);
+    const r = await copyText(nb.text);
+    if (r.ok) notify('success', 'Notion用にコピーしました！', {detail: `${nb.count}行を、改行・空行・字下げを保ったままコピーしました。Notionのページに貼り付けてください（1行が1ブロックになります）。`});
+    else notify('error', 'コピーできませんでした', {cause: r.cause, fix: 'ページを再読み込みしてもう一度お試しください。'});
   };
 
   $('btnCopy').onclick = async () => {
@@ -1455,6 +1466,39 @@ if (typeof module !== 'undefined') module.exports = {analyzeText, webHtmlToText,
     notify('success', `${res.count}箇所を修正しました！`, {detail: '「↩ 元に戻す」で取り消せます。'});
   };
 
+  // ===== 詳細チェック（辞書を使う校正）=====
+  // 本文は同じサイトのワーカーに渡すだけで、外部には送らない
+  const deepState = {worker: null, status: 'idle', error: '', pending: null, seq: 0, lastMs: 0};
+  const deepEnabled = () => RULES.some(r => r.deep && !settings.disabled.includes(r.id));
+  function deepStatusText(){
+    if (!deepEnabled()) return '';
+    if (deepState.status === 'unavailable') return '🔎 詳細チェック：この開き方では使えません（Web版で使えます）';
+    if (deepState.status === 'error') return '🔎 詳細チェック：エラーのため使えませんでした（' + deepState.error + '）';
+    if (deepState.status === 'loading') return '🔎 詳細チェック：辞書を読み込んで解析しています…（初回は数秒かかります）';
+    if (deepState.status === 'done') return '🔎 詳細チェック：完了';
+    return '';
+  }
+  function startDeep(text){
+    if (!deepEnabled() || !text.trim()) return;
+    if (DEEP.text === text) return;
+    if (!deepState.worker) {
+      if (location.protocol === 'file:') { deepState.status = 'unavailable'; return; }
+      try {
+        deepState.worker = new Worker('deep/worker.js');
+        deepState.worker.onmessage = e => {
+          const d = e.data;
+          if (d.id !== deepState.seq) return; // 古い依頼の結果は捨てる
+          if (d.ok) { DEEP.text = deepState.pending; DEEP.results = d.results; deepState.status = 'done'; deepState.lastMs = d.ms; }
+          else { deepState.status = 'error'; deepState.error = d.error; notify('error', '詳細チェックができませんでした', {cause: d.error, fix: 'ページを再読み込み（Ctrl+F5）してもう一度お試しください。通常のチェックはそのまま使えます。'}); }
+          if (lastChecked) runCheck(true);
+        };
+        deepState.worker.onerror = e => { deepState.status = 'error'; deepState.error = (e && e.message) || '辞書を読み込めませんでした'; if (lastChecked) runCheck(true); };
+      } catch(e) { deepState.status = 'unavailable'; return; }
+    }
+    deepState.seq++; deepState.pending = text; deepState.status = 'loading';
+    deepState.worker.postMessage({id: deepState.seq, text, terms: parseMemo(MEMO_TEXT).terms});
+  }
+
   // ===== チェック結果の表示 =====
   let lastChecked = false, checkTimer = null, lastTotal = 0, lastCheckedAt = '';
   // 長い本文（6万字超）は入力のたびの自動再チェックを止め、重くならないようにする（ボタンでのチェックは何文字でも可能）
@@ -1479,14 +1523,20 @@ if (typeof module !== 'undefined') module.exports = {analyzeText, webHtmlToText,
     notify('success', '修正しました！');
   }
 
-  function runCheck(){
+  function runCheck(fromDeep){
     lastChecked = true;
     const t = ta.value, ids = enabledIds(), groups = [];
+    if (!fromDeep) startDeep(t);
     for (const r of RULES) {
       if (!ids.has(r.id)) continue;
       const list = runRule(r, t).map(x => ({...x, text: t.substr(x.index, x.length)}));
       if (list.length) groups.push({rule:r, list});
     }
+    // 詳細チェックの指摘のうち、通常のチェックがすでに同じ箇所を指摘しているものは省く（二重表示を防ぐ）
+    const taken = [];
+    for (const g of groups) if (!g.rule.deep) for (const x of g.list) taken.push([x.index, x.index + Math.max(1, x.length)]);
+    for (const g of groups) if (g.rule.deep) g.list = g.list.filter(x => !taken.some(([a, b]) => x.index < b && a < x.index + Math.max(1, x.length)));
+    for (let k = groups.length - 1; k >= 0; k--) if (!groups[k].list.length) groups.splice(k, 1);
     renderIssues(groups, t);
   }
 
@@ -1496,6 +1546,7 @@ if (typeof module !== 'undefined') module.exports = {analyzeText, webHtmlToText,
     lastTotal = total;
     if (lastChecked) { const d = new Date(); lastCheckedAt = `${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`; }
     $('summary').textContent = lastChecked ? (total ? `指摘 ${total}件` : '指摘はありません 🎉') : '校正チェック';
+    if (lastChecked && deepStatusText()) { const ds = document.createElement('span'); ds.className = 'checked-at'; ds.textContent = deepStatusText(); $('summary').append(ds); }
     if (lastChecked) { const tm = document.createElement('span'); tm.className = 'checked-at'; tm.textContent = ta.value.length > 60000 ? `${lastCheckedAt} 時点（長い本文のため、直したあとは「校正チェック」を押して更新してください）` : `${lastCheckedAt} 時点（本文を直すと自動で更新されます）`; $('summary').append(tm); }
     if (!lastChecked) return;
     const hint = document.createElement('div'); hint.className = 'ai-hint';
