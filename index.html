@@ -1086,7 +1086,7 @@ if (typeof module !== 'undefined') module.exports = {analyzeText, webHtmlToText,
   // 初めて見るチェック項目のうち、標準でオフのものはオフにしておく
   settings.seenRules = settings.seenRules || [];
   // 一時期「標準でオフ」にしていた項目を、標準でオンに戻す（1回だけ）
-  if (!settings.reenabledV1) { settings.disabled = settings.disabled.filter(id => id !== 'openKanji' && id !== 'commas'); settings.reenabledV1 = true; }
+  if (!settings.reenabledV1) { settings.disabled = settings.disabled.filter(id => id !== 'openKanji' && id !== 'commas'); settings.reenabledV1 = true; try { localStorage.setItem(LS_KEY, JSON.stringify(settings)); } catch(e) {} }
   for (const r of RULES) if (!settings.seenRules.includes(r.id)) { settings.seenRules.push(r.id); if (r.defaultOff && !settings.disabled.includes(r.id)) settings.disabled.push(r.id); }
   const storageFail = (what, e) => notify('warn', `${what}を保存できませんでした`, {cause: e && e.name === 'QuotaExceededError' ? 'ブラウザの保存容量がいっぱいです' : 'ブラウザの設定（プライベートモード、サイトデータの保存禁止など）で保存が許可されていない可能性があります（' + errText(e) + '）', fix: 'ブラウザの設定でこのサイトのデータ保存を許可してください。作品メモは「.txtで書き出す」で保存できます。'});
   const save = () => { try { localStorage.setItem(LS_KEY, JSON.stringify(settings)); } catch(e) { storageFail('設定', e); } };
