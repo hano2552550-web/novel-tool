@@ -47,6 +47,13 @@ select,input[type=number]{font:inherit;padding:4px 6px;border:1px solid var(--li
 .goto input{width:6em;font:inherit;padding:2px 6px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--text)}
 .goto .desc{margin:0;width:100%}
 .ai-hint{margin-top:12px;padding:8px 10px;border:1px dashed var(--line);border-radius:8px;font-size:12px;color:var(--muted)}
+.stats h3{font-size:13px;margin:14px 0 6px}
+.stats table{width:100%;border-collapse:collapse;font-size:12.5px}
+.stats td{padding:3px 4px;border-bottom:1px dashed var(--line);vertical-align:middle}
+.stats td.num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.stats .bar{height:8px;border-radius:4px;background:var(--accent);opacity:.75;min-width:1px}
+.stats .note{font-size:11.5px;color:var(--muted);margin:4px 0 0}
+.stats .link{color:var(--accent);cursor:pointer;text-decoration:underline}
 .memo-badge{font-weight:400;color:var(--muted);font-size:12px;margin-left:8px}
 #memoText{width:100%;min-height:160px;resize:vertical;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--text);padding:10px 12px;font:inherit;line-height:1.7}
 .memo-foot{display:flex;flex-wrap:wrap;gap:4px 16px;align-items:center;margin-top:6px;font-size:13px}
@@ -127,6 +134,7 @@ ul.items li:hover{background:var(--btn)}
   <button id="btnFixAll">✨ 安全な修正をまとめて適用</button>
   <button id="btnUndo">↩ 元に戻す</button>
   <button id="btnAi">🤖 AI校正用にコピー</button>
+  <button id="btnStats">📊 文章の分析</button>
   <button id="btnClear">🗑 クリア</button>
   <span id="count"></span>
 </div>
@@ -450,6 +458,32 @@ const RULES = [
     desc:'地の文で、行頭に全角スペースがある行とない行が混在しています（少数派を指摘）。' },
   { id:'yure', label:'表記ゆれ', level:'info', safe:false, custom:checkYure,
     desc:'同じ言葉が漢字・ひらがなで混在しています。キャラごとの書き分けなど意図的ならOKです。' },
+  { id:'saire', label:'さ入れ言葉', level:'warn', safe:false, custom:checkSaire,
+    desc:'「読まさせる」→「読ませる」のように、不要な「さ」が入っている表現です。' },
+  { id:'inuki', label:'い抜き言葉（地の文）', level:'info', safe:false, custom:checkInuki,
+    desc:'地の文の「〜てる」「〜てた」です。語り手の口調として意図的ならそのままでOKです（台詞は対象外）。' },
+  { id:'styleMix', label:'文体の混在（です・ます調）', level:'info', safe:false, custom:checkStyleMix,
+    desc:'地の文の大半が「だ・である調」の中で、「です・ます調」の文が混じっている箇所です。' },
+  { id:'doubleNeg', label:'二重否定', level:'info', safe:false, custom:checkDoubleNeg,
+    desc:'「〜ないことはない」のような二重否定です。意味が伝わりにくくなっていないか確認してください。' },
+  { id:'tari', label:'「〜たり」の片方だけ', level:'info', safe:false, custom:checkTari,
+    desc:'「〜たり〜たりする」の「たり」が1つしかない文です。' },
+  { id:'noChain', label:'「の」の連続', level:'info', safe:false, custom:checkNoChain,
+    desc:'「AのBのCのD」のように「の」が3回以上続いている箇所です。' },
+  { id:'verbose', label:'冗長な表現', level:'info', safe:false, custom:checkVerbose,
+    desc:'「〜することができる」など、短くできるかもしれない表現です。' },
+  { id:'openKanji', label:'ひらがなにするのが一般的な漢字', level:'info', safe:false, custom:checkOpenKanji, defaultOff:true,
+    desc:'「〜して下さい」「〜する事」など、補助動詞・形式名詞はひらがなで書くのが一般的です。' },
+  { id:'paraHead', label:'段落の書き出しの重複', level:'info', safe:false, custom:checkParaHead,
+    desc:'同じ書き出し（「彼女は」など）の段落が3回以上続いている箇所です。' },
+  { id:'kosoado', label:'指示語（こそあど）の多用', level:'info', safe:false, custom:checkKosoado,
+    desc:'1文に「これ・それ・あの」などの指示語が3つ以上ある箇所です。' },
+  { id:'commas', label:'読点の多すぎ・なさすぎ', level:'info', safe:false, custom:checkCommas, defaultOff:true,
+    desc:'読点が5つ以上ある文と、70字以上あるのに読点がない文です。' },
+  { id:'widthMix', label:'全角・半角の混在', level:'info', safe:false, custom:checkWidthMix,
+    desc:'英字・数字・丸括弧で、全角と半角が混在している箇所（少ないほう）です。' },
+  { id:'machineDep', label:'機種依存文字', level:'info', safe:false, custom:checkMachineDep,
+    desc:'「①」「㈱」「Ⅲ」など、環境によって表示が崩れることがある文字です。' },
   { id:'longSentence', label:'長すぎる一文（120字超）', level:'info', safe:false, custom:checkLong,
     desc:'一文が長いと読みにくくなりがちです。区切れるか検討してみてください。' },
 ];
@@ -462,9 +496,18 @@ const toHira = s => s.replace(/[ァ-ヶ]/g, c => String.fromCharCode(c.charCodeA
 
 // メモから「登録名」と「言い換え（誤→正）」を読み取る
 function parseMemo(memo){
-  const terms = [], replaces = [];
+  const terms = [], replaces = [], checks = [];
   for (const raw of (memo || '').split(/\r?\n/)) {
     const line = raw.trim();
+    // 【チェック】自分で決めた要注意の言葉・言い回し（/正規表現/ も可）。末尾の（　）は説明
+    let c = line.match(/^【チェック】\s*(.+?)\s*(?:[（(]([^（）()]*)[）)])?$/);
+    if (c) {
+      let re = null;
+      const rx = c[1].match(/^\/(.+)\/([a-z]*)$/);
+      try { re = rx ? new RegExp(rx[1], (rx[2] || '').replace(/g/g, '') + 'g') : new RegExp(c[1].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g'); } catch(e) { re = null; }
+      if (re) checks.push({re, label:c[1], note:c[2] || ''});
+      continue;
+    }
     let m = line.match(/^【(?:人物|キャラ|名前|用語|地名|固有名詞)】\s*(.+)$/);
     if (m) {
       const head = m[1].split(/[（(：:]/)[0];
@@ -474,7 +517,7 @@ function parseMemo(memo){
     m = line.match(/^【言い換え】\s*(.+?)\s*(?:→|->|⇒)\s*(.+)$/);
     if (m) for (const w of m[1].split(/[、,，／/]+/)) if (w.trim()) replaces.push([w.trim(), m[2].trim()]);
   }
-  return {terms:[...new Set(terms)], replaces};
+  return {terms:[...new Set(terms)], replaces, checks};
 }
 
 // 登録名の「打ち間違いらしい形」を作る（同じ文字の重なり、隣り合う文字の入れ替わり、長い名前は1文字抜け）
@@ -488,8 +531,12 @@ function typoVariants(term){
 }
 
 function checkMemo(t){
-  const {terms, replaces} = parseMemo(MEMO_TEXT);
+  const {terms, replaces, checks} = parseMemo(MEMO_TEXT);
   const out = [], seen = new Set();
+  for (const ck of checks) {
+    ck.re.lastIndex = 0; let m;
+    while ((m = ck.re.exec(t))) { if (!m[0].length) { ck.re.lastIndex++; continue; } out.push({index:m.index, length:m[0].length, msg:`作品メモの【チェック】に登録した言葉です：${ck.label}${ck.note ? '（' + ck.note + '）' : ''}`}); }
+  }
   const push = (i, len, msg, fix) => { const k = i + ':' + len; if (seen.has(k)) return; seen.add(k); out.push({index:i, length:len, msg, fixText:fix}); };
   // 正しい表記が出てくる範囲（そこに重なる候補は誤検出なので除外）
   const exact = [];
@@ -707,6 +754,214 @@ function checkRedundant(t){
   return out.sort((a, b) => a.index - b.index);
 }
 
+/* ========== 文章作法のチェック（Word・一太郎などの校正項目を参考に） ========== */
+// 地の文かどうか（「」『』などで始まる行は台詞として扱う）
+const isDialogueLine = l => /^[\s　]*[「『（(“"]/.test(l);
+// 行ごとに「地の文の行」だけを対象にして正規表現で探す
+function scanProse(t, re, make){
+  const out = []; let pos = 0;
+  for (const line of t.split('\n')) {
+    if (!isDialogueLine(line)) { re.lastIndex = 0; let m; while ((m = re.exec(line))) { if (!m[0].length) { re.lastIndex++; continue; } const r = make(m); if (r) out.push({index:pos + m.index + (r.offset || 0), length:r.length || m[0].length, msg:r.msg, fixText:r.fix}); } }
+    pos += line.length + 1;
+  }
+  return out;
+}
+function scanAll(t, re, make){
+  const out = []; re.lastIndex = 0; let m;
+  while ((m = re.exec(t))) { if (!m[0].length) { re.lastIndex++; continue; } const r = make(m); if (r) out.push({index:m.index + (r.offset || 0), length:r.length || m[0].length, msg:r.msg, fixText:r.fix}); }
+  return out;
+}
+
+// 文体（です・ます調／だ・である調）の混在：地の文の文末で、少ないほうを指摘
+function checkStyleMix(t){
+  const polite = [], plain = []; let pos = 0;
+  for (const line of t.split('\n')) {
+    if (!isDialogueLine(line)) {
+      const re = /[^。！？!?]*?(です|ます|でした|ました|ません|ましょう|でしょう)。/g; let m;
+      while ((m = re.exec(line))) polite.push({index:pos + m.index + m[0].length - m[1].length - 1, length:m[1].length});
+      const re2 = /[^。！？!?]*?(だ|である|た|る|ない|い)。/g;
+      while ((m = re2.exec(line))) if (!/(です|ます|でした|ました|ません)。$/.test(m[0])) plain.push(1);
+    }
+    pos += line.length + 1;
+  }
+  // 小説の地の文は「だ・である調」が基本。です・ます調が少数混じっているときだけ指摘する
+  if (!polite.length || polite.length >= plain.length || polite.length > plain.length * 0.3) return [];
+  return polite.map(p => ({...p, msg:'地の文の多くは「だ・である調」ですが、ここは「です・ます調」です（語り手の口調として意図的ならOK）'}));
+}
+
+// い抜き言葉（地の文のみ）：知ってる→知っている
+function checkInuki(t){
+  return scanProse(t, /([っい]て|んで)(る|た|ます|ました|ない|なかった)(?![ぁ-ん])|([っい]て|んで)(る|た)(?=[ぁ-ん])/g, m => {
+    const head = m[1] || m[3], tail = m[2] || m[4];
+    return {msg:`い抜き言葉：「${m[0]}」→「${head}い${tail}」（地の文では「〜ている」が一般的。語りの口調として意図的ならOK）`, fix:`${head}い${tail}`};
+  });
+}
+
+// さ入れ言葉：読まさせる→読ませる
+function checkSaire(t){
+  return scanAll(t, /([一-龠])(か|が|た|ま|ば|ら|わ|な)させ(?=[てるたなまらよずれ])/g, m =>
+    ({offset:1, length:3, msg:`さ入れ言葉：「${m[1]}${m[2]}させ」→「${m[1]}${m[2]}せ」`, fix:`${m[2]}せ`}));
+}
+
+// 二重否定（意味がわかりにくくなりやすい）
+function checkDoubleNeg(t){
+  return scanAll(t, /(ない|なく)(ことはない|こともない|わけではない|わけでもない|はない|もない)|ないではない|ないでもない|なくはなかった|ないこともなかった/g, m =>
+    ({msg:`二重否定：「${m[0]}」。意味が伝わりにくくなっていないか確認してください（ニュアンスを出すための意図的な表現ならOK）`}));
+}
+
+// 「の」の連続（名詞の・名詞の・名詞の…）
+function checkNoChain(t){
+  return scanAll(t, /[一-龠ァ-ヶー々]+の[一-龠ァ-ヶー々]+の[一-龠ァ-ヶー々]+の[一-龠ァ-ヶー々]+/g, m =>
+    ({msg:'「の」が3回以上続いています。言い換えるか語順を変えると読みやすくなります'}));
+}
+
+// 冗長な表現
+const VERBOSE = [
+  ['することができ', 'でき'], ['ことができる', 'できる（または「〜られる」）'], ['という風に', 'のように'], ['というふうに', 'のように'], ['させていただ', 'し（または「いた」）'],
+  ['であると言える', 'である'], ['であるといえる', 'である'], ['を行った', 'をした'], ['を行う', 'をする'], ['に関しては', 'については'], ['することにした', 'した'],
+  ['のようなもの', 'のよう'], ['かもしれないと思', 'と思'], ['と思われる', 'と思う／だろう'], ['ていくことになる', 'ていく'], ['ということになる', 'となる'], ['ということだ', 'のだ']
+];
+function checkVerbose(t){
+  const out = [];
+  for (const [w, alt] of VERBOSE) { let i = t.indexOf(w); while (i !== -1) { out.push({index:i, length:w.length, msg:`冗長な表現かもしれません：「${w}」→「${alt}」などで短くできないか確認してください`}); i = t.indexOf(w, i + w.length); } }
+  return out.sort((a, b) => a.index - b.index);
+}
+
+// 補助動詞・形式名詞の漢字（ひらがなにするのが一般的なもの）
+const OPEN_KANJI = [
+  [/て下さ/g, 'てくださ', '補助動詞'], [/て頂/g, 'ていただ', '補助動詞'], [/て貰/g, 'てもら', '補助動詞'], [/て見(る|た|て|よう|ます|ない)/g, 'てみ$1', '補助動詞'],
+  [/て置(く|いた|いて|かな)/g, 'てお$1', '補助動詞'], [/て行(く|った|って|かな|ける)/g, 'てい$1', '補助動詞'], [/て来(る|た|て|ない)/g, 'てき$1', '補助動詞'],
+  [/て欲し/g, 'てほし', '補助形容詞'], [/て居(る|た|て)/g, 'てい$1', '補助動詞'], [/て仕舞/g, 'てしま', '補助動詞'], [/事が出来/g, 'ことができ', '形式名詞'],
+  [/(る|た|い)事(が|は|を|に|も|で|だ|。)/g, '$1こと$2', '形式名詞'], [/(る|た|い|な)物(が|は|を|に|も|で|だ)/g, '$1もの$2', '形式名詞（抽象的な意味のとき）'],
+  [/の様(な|に|だ)/g, 'のよう$1', '形式名詞'], [/の為(に|の|だ)/g, 'のため$1', '形式名詞'], [/(る|た)時(に|は|の|、)/g, '$1とき$2', '形式名詞（時刻でなく「場合」の意味のとき）'], [/(る|た)内に/g, '$1うちに', '形式名詞']
+];
+function checkOpenKanji(t){
+  const out = [];
+  for (const [re, rep, kind] of OPEN_KANJI) {
+    re.lastIndex = 0; let m;
+    while ((m = re.exec(t))) { const fix = m[0].replace(new RegExp(re.source), rep); out.push({index:m.index, length:m[0].length, msg:`${kind}は、ひらがなで書くのが一般的です：「${m[0]}」→「${fix}」（作品の表記方針として漢字にしているならOK）`, fixText:fix}); }
+  }
+  return out.sort((a, b) => a.index - b.index);
+}
+
+// 機種依存文字
+function checkMachineDep(t){
+  return scanAll(t, /[①-⓿Ⅰ-ⅿ㈠-㉃㊀-㊰㌀-㏿№℡㈱㈲㈹㍻-㍾]/g, m =>
+    ({msg:`機種依存文字「${m[0]}」：環境によって表示が崩れることがあります`}));
+}
+
+// 全角・半角の混在（英数字・括弧）。少ないほうを指摘
+function checkWidthMix(t){
+  const out = [];
+  const pairs = [
+    {half:/[A-Za-z]/g, full:/[Ａ-Ｚａ-ｚ]/g, name:'英字'},
+    {half:/[0-9]/g, full:/[０-９]/g, name:'数字'},
+    {half:/[()]/g, full:/[（）]/g, name:'丸括弧'}
+  ];
+  for (const p of pairs) {
+    const H = [...t.matchAll(p.half)], F = [...t.matchAll(p.full)];
+    if (!H.length || !F.length) continue;
+    const [minor, kind] = H.length < F.length ? [H, '半角'] : [F, '全角'];
+    for (const m of minor) out.push({index:m.index, length:1, msg:`${p.name}の全角・半角が混在しています（この${kind}は少数派です）`});
+  }
+  return out.sort((a, b) => a.index - b.index);
+}
+
+// 読点の多すぎる文・読点のない長い文
+function checkCommas(t){
+  const out = [];
+  for (const s of splitSentences(t)) {
+    const body = s.text.replace(/^[\s　]+/, '');
+    const n = (body.match(/、/g) || []).length;
+    if (n >= 5) out.push({index:s.start, length:s.text.length, msg:`1文に読点が${n}個あります。文を分けると読みやすくなるかもしれません`});
+    else if (n === 0 && body.length >= 70) out.push({index:s.start, length:s.text.length, msg:`${body.length}字の文に読点がありません。区切りに読点を入れると読みやすくなるかもしれません`});
+  }
+  return out;
+}
+
+// こそあど言葉（指示語）の多用：1文に3つ以上
+const KOSOADO = /これ|それ|あれ|この(?!よう|まま|頃|ごろ)|その(?!まま|よう)|あの(?!ね|さ|子|頃|ころ|日)|ここ|そこ|あそこ|こんな|そんな|あんな/g;
+function checkKosoado(t){
+  const out = [];
+  for (const s of splitSentences(t)) {
+    const ms = [...s.text.matchAll(KOSOADO)];
+    if (ms.length >= 3) for (const m of ms.slice(2)) out.push({index:s.start + m.index, length:m[0].length, msg:`1文に指示語（こそあど言葉）が${ms.length}つあります。何を指しているか伝わるか確認してください`});
+  }
+  return out;
+}
+
+// 段落の書き出しの重複：3段落以上続けて同じ書き出し（地の文・台詞それぞれ）
+function checkParaHead(t){
+  const out = []; let pos = 0, run = [];
+  const flush = () => { if (run.length >= 3) for (const r of run.slice(2)) out.push({index:r.i, length:r.len, msg:`「${r.head}」で始まる段落が${run.length}回続いています`}); run = []; };
+  for (const line of t.split('\n')) {
+    const lead = line.match(/^[\s　]*/)[0].length, body = line.slice(lead);
+    if (body) {
+      const head = /^[「『]/.test(body) ? body.slice(0, 3) : body.slice(0, 2);
+      if (run.length && run[0].head !== head) flush();
+      run.push({i:pos + lead, len:head.length, head});
+    }
+    pos += line.length + 1;
+  }
+  flush();
+  return out;
+}
+
+// 「〜たり〜たりする」の片方だけ
+const TARI_ONOMA = /(ば|ぴ|ゆ|ぐ|が|ぼ|ひ|あ|ぽ|さ|ぱ|や|ぴ|べ|ぺ|ぎ|し|ぶ|う|ほ|は|ま|く|ち|に)っ?たり/;
+function checkTari(t){
+  const out = [];
+  for (const s of splitSentences(t)) {
+    const all = [...s.text.matchAll(/[だた]り/g)].filter(m => !TARI_ONOMA.test(s.text.slice(Math.max(0, m.index - 2), m.index + 2)) && !/(ふ|ひと|あ|ぴっ|ば|ふた)$/.test(s.text.slice(0, m.index)) && !/^(たりない|たりる)/.test(s.text.slice(m.index)));
+    // 「〜たりする」「〜たりも」のように例示で1つだけ使うのは一般的なので、それ以外（〜たり踊る など）だけ指摘
+    if (all.length === 1 && !/^[だた]り(する|して|した|しない|しま|せず|も|と|は|など|なんか|なんて|でき)/.test(s.text.slice(all[0].index))) out.push({index:s.start + all[0].index, length:2, msg:'「〜たり〜たりする」の「たり」が1つだけです。並べる場合は「〜たり、〜たりする」とそろえるのが一般的です'});
+  }
+  return out;
+}
+
+/* ========== 文章の分析（統計） ========== */
+function analyzeText(t){
+  t = normalizeNewlines(t);
+  const lines = t.split('\n');
+  const chars = t.replace(/[\s　]/g, '');
+  const total = chars.length || 1;
+  const cnt = re => (chars.match(re) || []).length;
+  const kinds = [
+    ['漢字', cnt(/[一-龠々〆ヵヶ]/g)], ['ひらがな', cnt(/[ぁ-ゖ]/g)], ['カタカナ', cnt(/[ァ-ヺー]/g)],
+    ['英数字', cnt(/[A-Za-z0-9Ａ-Ｚａ-ｚ０-９]/g)]
+  ];
+  kinds.push(['記号など', Math.max(0, chars.length - kinds.reduce((a, k) => a + k[1], 0))]);
+  const sentences = splitSentences(t).map(x => ({...x, body:x.text.replace(/^[\s　「『]+/, '').replace(/[」』]+$/, '')})).filter(x => x.body.length);
+  const lens = sentences.map(x => x.body.length);
+  const avg = lens.length ? lens.reduce((a, b) => a + b, 0) / lens.length : 0;
+  let longest = null; for (const x of sentences) if (!longest || x.body.length > longest.body.length) longest = x;
+  const dist = [['〜20字', 0], ['21〜40字', 0], ['41〜60字', 0], ['61〜100字', 0], ['101字〜', 0]];
+  for (const n of lens) dist[n <= 20 ? 0 : n <= 40 ? 1 : n <= 60 ? 2 : n <= 100 ? 3 : 4][1]++;
+  const paras = lines.filter(l => l.trim());
+  const dlg = paras.filter(isDialogueLine).join('').replace(/[\s　]/g, '').length;
+  const commas = (t.match(/、/g) || []).length;
+  // 地の文の文末（最後の2文字）
+  const ends = {};
+  for (const x of sentences) { if (isDialogueLine(x.text)) continue; const m = x.text.match(/(..)。$/); if (m) ends[m[1]] = (ends[m[1]] || 0) + 1; }
+  // よく使う言葉（漢字2字以上・カタカナ2字以上・くり返しが気になりやすい言葉）
+  const words = {};
+  for (const m of t.matchAll(/[一-龠々]{2,}|[ァ-ヺー]{2,}/g)) words[m[0]] = (words[m[0]] || 0) + 1;
+  for (const [w] of REPEAT_WORDS) { const n = (t.match(new RegExp(w, 'g')) || []).length; if (n) words[w] = n; }
+  const top = (o, n) => Object.entries(o).sort((a, b) => b[1] - a[1]).slice(0, n);
+  // 章ごとの文字数
+  const chapters = []; let curName = '（はじめ）', curLen = 0;
+  for (const l of lines) { const m = l.match(/^\[chapter:(.*)\]$/); if (m) { if (curLen || chapters.length) chapters.push([curName, curLen]); curName = m[1] || '（無題の章）'; curLen = 0; } else curLen += l.replace(/[\s　]/g, '').length; }
+  chapters.push([curName, curLen]);
+  return {
+    chars: chars.length, lines: lines.length, paras: paras.length, sentences: sentences.length,
+    avg, longest, over60: lens.filter(n => n > 60).length, over100: lens.filter(n => n > 100).length,
+    dialogueRate: dlg / total, kinds: kinds.map(([k, n]) => [k, n, n / total]), dist,
+    commaPerSentence: sentences.length ? commas / sentences.length : 0,
+    kosoado: (t.match(KOSOADO) || []).length, toiu: (t.match(/という/g) || []).length, koto: (t.match(/こと/g) || []).length,
+    ends: top(ends, 6), words: top(words, 15), chapters: chapters.length > 1 ? chapters : []
+  };
+}
+
 const MEMO_TEMPLATE = `【作品】（原作名・シリーズ名）
 
 【人物】春野ひかり、ひかり（一人称：わたし／夏目のことは「なつめくん」と呼ぶ）
@@ -717,6 +972,9 @@ const MEMO_TEMPLATE = `【作品】（原作名・シリーズ名）
 
 【言い換え】なつめ君→なつめくん
 （よく間違える表記→正しい表記）
+
+【チェック】ようにして（自分で気をつけたい言い回し。見つけたら指摘します）
+【チェック】/[あかさたなはまやらわ]れ[るたて]/（受動態っぽい表現。/ /で囲むと正規表現）
 
 【世界観】
 （舞台・時代・設定・関係性など、自由に書いてください）
@@ -763,6 +1021,9 @@ const YURE_PAIRS = [
 function findAll(t, word){ const r = []; let i = t.indexOf(word); while (i !== -1) { r.push(i); i = t.indexOf(word, i + word.length); } return r; }
 function checkYure(t){
   const out = [];
+  // カタカナ語の表記ゆれ（「コンピューター／コンピュータ」「ヴァイオリン／バイオリン」など）
+  const kat = {}; for (const m of t.matchAll(/[ァ-ヶー・]{3,}/g)) { const w = m[0].replace(/^・+|・+$/g, ''); const k = w.replace(/[ー・]/g, '').replace(/ヴァ/g, 'バ').replace(/ヴィ/g, 'ビ').replace(/ヴ/g, 'ブ'); (kat[k] = kat[k] || {}); (kat[k][w] = kat[k][w] || []).push(m.index); }
+  for (const k in kat) { const forms = Object.entries(kat[k]); if (forms.length < 2) continue; forms.sort((a, b) => b[1].length - a[1].length); const [maj] = forms[0]; for (const [w, idx] of forms.slice(1)) for (const i of idx) out.push({index:i, length:w.length, msg:`カタカナ語の表記ゆれ：「${w}」${idx.length}回 /「${maj}」${forms[0][1].length}回`, fixText:maj}); }
   for (const [a, b] of YURE_PAIRS) {
     const A = findAll(t, a), B = findAll(t, b);
     if (!A.length || !B.length) continue;
@@ -810,7 +1071,7 @@ function applySafeFixes(t, enabledIds){
   return {text:t, count:total};
 }
 
-if (typeof module !== 'undefined') module.exports = {webHtmlToText, textToNotionBlocks, setMemoText, parseMemo, checkMemo, notionJsonToText, htmlToText, formatText, looksDoubleSpaced, RULES, runRule, applySafeFixes};
+if (typeof module !== 'undefined') module.exports = {analyzeText, webHtmlToText, textToNotionBlocks, setMemoText, parseMemo, checkMemo, notionJsonToText, htmlToText, formatText, looksDoubleSpaced, RULES, runRule, applySafeFixes};
 </script>
 
 <script>
@@ -822,6 +1083,9 @@ if (typeof module !== 'undefined') module.exports = {webHtmlToText, textToNotion
   const defaults = {autoConvert:true, mode:'auto', indent:'keep', maxBlank:-1, disabled:[]};
   let settings = {...defaults};
   try { settings = {...defaults, ...JSON.parse(localStorage.getItem(LS_KEY) || '{}')}; } catch(e) {}
+  // 初めて見るチェック項目のうち、標準でオフのものはオフにしておく
+  settings.seenRules = settings.seenRules || [];
+  for (const r of RULES) if (!settings.seenRules.includes(r.id)) { settings.seenRules.push(r.id); if (r.defaultOff && !settings.disabled.includes(r.id)) settings.disabled.push(r.id); }
   const storageFail = (what, e) => notify('warn', `${what}を保存できませんでした`, {cause: e && e.name === 'QuotaExceededError' ? 'ブラウザの保存容量がいっぱいです' : 'ブラウザの設定（プライベートモード、サイトデータの保存禁止など）で保存が許可されていない可能性があります（' + errText(e) + '）', fix: 'ブラウザの設定でこのサイトのデータ保存を許可してください。作品メモは「.txtで書き出す」で保存できます。'});
   const save = () => { try { localStorage.setItem(LS_KEY, JSON.stringify(settings)); } catch(e) { storageFail('設定', e); } };
 
@@ -1277,6 +1541,41 @@ if (typeof module !== 'undefined') module.exports = {webHtmlToText, textToNotion
   };
   $('gotoBtn').onclick = gotoLine;
   $('gotoLine').addEventListener('keydown', e => { if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); gotoLine(); } });
+
+  // 文章の分析（統計）を右側に表示する
+  function renderStats(){
+    const t = ta.value;
+    if (!t.trim()) { notify('error', '分析できませんでした', {cause: '本文が空です', fix: '本文を貼り付けてから押してください。'}); return; }
+    const a = analyzeText(t);
+    const box = $('issues'); box.textContent = '';
+    lastChecked = false;
+    $('summary').textContent = '📊 文章の分析';
+    const wrap = document.createElement('div'); wrap.className = 'stats';
+    const el = (tag, text, cls) => { const e = document.createElement(tag); if (text !== undefined) e.textContent = text; if (cls) e.className = cls; return e; };
+    const table = (rows, withBar) => { const tb = el('table'); for (const r of rows) { const tr = el('tr'); tr.append(el('td', r[0])); const v = el('td', r[1], 'num'); tr.append(v); if (withBar) { const td = el('td'); td.style.width = '45%'; const b = el('div', undefined, 'bar'); b.style.width = Math.round(Math.min(1, r[2]) * 100) + '%'; td.append(b); tr.append(td); } tb.append(tr); } return tb; };
+    const pct = x => (x * 100).toFixed(1) + '%';
+    wrap.append(el('h3', '基本'));
+    wrap.append(table([['文字数（空白・改行を除く）', a.chars.toLocaleString() + '字'], ['行数', a.lines.toLocaleString()], ['段落（空行以外の行）', a.paras.toLocaleString()], ['文の数', a.sentences.toLocaleString()], ['台詞の割合', pct(a.dialogueRate)]]));
+    wrap.append(el('h3', '文の長さ'));
+    wrap.append(table([['1文の平均', a.avg.toFixed(1) + '字'], ['60字を超える文', a.over60 + '文'], ['100字を超える文', a.over100 + '文'], ['1文あたりの読点', a.commaPerSentence.toFixed(1) + '個']]));
+    if (a.longest) { const p = el('p', '', 'note'); const ln = t.slice(0, a.longest.start).split('\n').length; const link = el('span', `いちばん長い文：${a.longest.body.length}字（${ln}行目）`, 'link'); link.onclick = () => jump(a.longest.start, a.longest.text.length); p.append(link); wrap.append(p); }
+    const maxD = Math.max(1, ...a.dist.map(d => d[1]));
+    wrap.append(table(a.dist.map(([k, n]) => [k, n + '文', n / maxD]), true));
+    wrap.append(el('p', '目安：読みやすい文章は、1文あたり40〜60字程度といわれます（小説では文体によって大きく変わります）。', 'note'));
+    wrap.append(el('h3', '文字の種類'));
+    wrap.append(table(a.kinds.map(([k, n, r]) => [k, pct(r), r]), true));
+    wrap.append(el('p', '目安：漢字の割合は20〜30%程度が読みやすいといわれます。', 'note'));
+    if (a.ends.length) { wrap.append(el('h3', '地の文の文末（多い順）')); const maxE = a.ends[0][1]; wrap.append(table(a.ends.map(([k, n]) => ['〜' + k + '。', n + '回', n / maxE]), true)); }
+    if (a.words.length) { wrap.append(el('h3', 'よく使っている言葉')); const maxW = a.words[0][1]; wrap.append(table(a.words.map(([k, n]) => [k, n + '回', n / maxW]), true)); wrap.append(el('p', '同じ言葉が多すぎないかの確認に使えます（名前や作品の用語が多いのは自然です）。', 'note')); }
+    wrap.append(el('h3', '気になりやすい言葉の数'));
+    wrap.append(table([['指示語（これ・それ・あの など）', a.kosoado + '回'], ['「という」', a.toiu + '回'], ['「こと」', a.koto + '回']]));
+    if (a.chapters.length) { wrap.append(el('h3', '章ごとの文字数')); const maxC = Math.max(1, ...a.chapters.map(c => c[1])); wrap.append(table(a.chapters.map(([k, n]) => [k, n.toLocaleString() + '字', n / maxC]), true)); }
+    wrap.append(el('p', '「🔍 校正チェック」を押すと、指摘の一覧に戻ります。', 'note'));
+    box.append(wrap);
+    document.querySelector('aside').scrollTop = 0;
+    notify('success', '分析しました！', {detail: '右側に文章の分析結果を表示しました。'});
+  }
+  $('btnStats').onclick = renderStats;
 
   $('btnCheck').onclick = () => {
     if (!ta.value.trim()) { notify('error', 'チェックできませんでした', {cause: '本文が空です', fix: '本文を貼り付けてから押してください。'}); return; }
