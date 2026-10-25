@@ -122,6 +122,7 @@ ul.items li:hover{background:var(--btn)}
 
 <div class="toolbar">
   <button id="btnCopy" class="primary">📋 pixiv用にコピー</button>
+  <button id="btnCopyNotion">📝 Notion用にコピー</button>
   <button id="btnCheck">🔍 校正チェック</button>
   <button id="btnFixAll">✨ 安全な修正をまとめて適用</button>
   <button id="btnUndo">↩ 元に戻す</button>
@@ -251,7 +252,8 @@ function notionJsonToText(json, plain){
     const rec = map[id]; const v = rec && (rec.value && rec.value.value ? rec.value.value : rec.value);
     if (!v || v.alive === false || depth > 20) return;
     if (v.type === 'page' && depth > 0) return;
-    lines.push(titleOf(v));
+    // Notionの見出しブロックは、pixivの章見出し [chapter:…] にする
+    lines.push(/^(header|sub_header|sub_sub_header)$/.test(v.type) && titleOf(v).trim() ? `[chapter:${titleOf(v).trim()}]` : titleOf(v));
     for (const cid of (v.content || [])) if (map[cid]) render(cid, map, depth + 1);
   };
   for (const b of sel) {
@@ -276,6 +278,73 @@ function notionJsonToText(json, plain){
     }
   }
   return lines.join('\n');
+}
+
+// pixivなどWebページからコピーしたHTMLを、元の本文（行と空行）に戻す。
+// pixivの閲覧ページは、空行で区切られたまとまりを <p> に、改行を <br> にしている。
+// 章見出しは <h2>、ルビは <ruby>。それぞれpixivの記法 [chapter:…]・[[rb:… > …]] に戻す。
+function webHtmlToText(html, parser){
+  const doc = parser.parseFromString(html, 'text/html');
+  if (!doc.body.querySelector('p, h1, h2, h3, h4')) return null;
+  const paras = [];
+  let cur = null;
+  const flush = () => { if (cur !== null) { paras.push(cur); cur = null; } };
+  const inline = (node) => {
+    let out = '';
+    for (const ch of node.childNodes) {
+      if (ch.nodeType === 3) out += ch.nodeValue.replace(/[\r\n]+/g, '');
+      else if (ch.nodeType === 1) {
+        const tag = ch.tagName.toUpperCase();
+        if (SKIP_TAGS.has(tag) || tag === 'RT' || tag === 'RP') continue;
+        if (tag === 'BR') out += '\n';
+        else if (tag === 'RUBY') {
+          const rt = [...ch.querySelectorAll('rt')].map(x => x.textContent).join('');
+          const base = [...ch.childNodes].filter(x => !(x.nodeType === 1 && /^(RT|RP)$/i.test(x.tagName))).map(x => x.textContent).join('');
+          out += rt ? `[[rb:${base} > ${rt}]]` : base;
+        } else out += inline(ch);
+      }
+    }
+    return out;
+  };
+  const walk = (node) => {
+    for (const ch of node.childNodes) {
+      if (ch.nodeType === 3) { const v = ch.nodeValue.replace(/[\r\n]+/g, ''); if (v.trim()) cur = (cur ?? '') + v; continue; }
+      if (ch.nodeType !== 1) continue;
+      const tag = ch.tagName.toUpperCase();
+      if (SKIP_TAGS.has(tag)) continue;
+      if (tag === 'P') { flush(); const v = inline(ch); paras.push(v === '\n' ? {t:'', br:true} : v); }
+      else if (/^H[1-6]$/.test(tag)) { flush(); const h = inline(ch).trim(); if (h) paras.push({t:`[chapter:${h}]`, h:true}); }
+      else if (tag === 'BR') cur = (cur ?? '') + '\n';
+      else if (tag === 'RUBY' || tag === 'SPAN' || tag === 'A' || tag === 'B' || tag === 'I' || tag === 'EM' || tag === 'STRONG') cur = (cur ?? '') + inline(ch);
+      else walk(ch);
+    }
+  };
+  walk(doc.body); flush();
+  // まとまり同士は空行1つで区切る（<p>の先頭の改行は、それより多い空行を表す）。
+  // pixivでは、改行だけの段落は空行1つぶん、章見出しの直後と「改行だけの段落の直後の見出し」は改行1つで区切られる
+  // （pixivの実際の作品と元の本文を照合して確認した規則）
+  const P = paras.map(x => typeof x === 'string' ? {t:x} : x);
+  let out = '';
+  P.forEach((x, k) => {
+    if (k > 0) { const prev = P[k - 1]; out += (prev.h || (x.h && prev.br)) ? '\n' : '\n\n'; }
+    out += x.t;
+  });
+  return out;
+}
+
+// 本文をNotionのブロック情報に変換する（1行＝1ブロック、空行＝空のブロック、[chapter:…]＝見出し）
+function textToNotionBlocks(text){
+  const uuid = () => (typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID() :
+    'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 3 | 8)).toString(16); });
+  const lines = normalizeNewlines(text).replace(/^\n+|\n+$/g, '').split('\n');
+  const blocks = lines.map(l => {
+    const id = uuid(), v = {id, type:'text', alive:true};
+    const m = l.match(/^\[chapter:(.*)\]$/);
+    if (m) { v.type = 'sub_header'; if (m[1].trim()) v.properties = {title:[[m[1].trim()]]}; }
+    else if (l !== '') v.properties = {title:[[l]]};
+    return {blockId:id, blockSubtree:{__version__:3, block:{[id]:{value:v}}}};
+  });
+  return {json: JSON.stringify({blocks}), count: lines.length};
 }
 
 function normalizeNewlines(t){
@@ -566,17 +635,53 @@ const MISUSES = [
   ['異和感', '違和感', '誤変換'], ['完壁', '完璧', '誤変換（「璧」は玉へん）'], ['絶対絶命', '絶体絶命', '誤変換'], ['危機一発', '危機一髪', '誤変換'],
   ['五里夢中', '五里霧中', '誤変換'], ['意味深長', null], ['短刀直入', '単刀直入', '誤変換'], ['興味深深', '興味津々', '誤変換'], ['興味深々', '興味津々', '誤変換'],
   ['無我無中', '無我夢中', '誤変換'], ['一心同体', null], ['口先三寸', '舌先三寸', '慣用句の誤用'], ['頭をかしげ', '首をかしげ', '慣用句の誤用'],
-  ['眉をしかめ', '眉をひそめ', '慣用句の誤用（「顔をしかめる」と混同）'], ['目鼻が利く', '目端が利く', '慣用句の誤用'], ['腹が煮えくり返', 'はらわたが煮えくり返', '慣用句の誤用']
-].filter(x => x[1]);
+  ['眉をしかめ', '眉をひそめ', '慣用句の誤用（「顔をしかめる」と混同）'], ['目鼻が利く', '目端が利く', '慣用句の誤用'], ['腹が煮えくり返', 'はらわたが煮えくり返', '慣用句の誤用'],
+  // --- 同音の言葉の誤変換（言い回しごと照合するので、文脈がなくても誤りといえるもの） ---
+  ['最新の注意', '細心の注意', '誤変換'], ['最新の配慮', '細心の配慮', '誤変換'], ['細心の情報', '最新の情報', '誤変換'], ['細心作', '最新作', '誤変換'], ['細心型', '最新型', '誤変換'],
+  ['以外な', '意外な', '誤変換'], ['感心がある', '関心がある', '誤変換'], ['感心がな', '関心がな', '誤変換'], ['感心を持', '関心を持', '誤変換'], ['感心を示', '関心を示', '誤変換'], ['関心した', '感心した', '誤変換'], ['関心して', '感心して', '誤変換'],
+  ['意志表示', '意思表示', '誤変換'], ['意思が強', '意志が強', '誤変換'], ['意思の強', '意志の強', '誤変換'], ['意志疎通', '意思疎通', '誤変換'], ['意志決定', '意思決定', '誤変換'],
+  ['体制を崩', '体勢を崩', '誤変換'], ['態勢を崩', '体勢を崩', '誤変換'], ['体制を立て直', '体勢を立て直', '誤変換（姿勢の意味なら「体勢」）'],
+  ['責任を追求', '責任を追及', '誤変換'], ['利益を追及', '利益を追求', '誤変換'], ['幸せを追及', '幸せを追求', '誤変換'], ['真理を追及', '真理を追究', '誤変換'],
+  ['対象的', '対照的', '誤変換'], ['左右対象', '左右対称', '誤変換'], ['始めまして', '初めまして', '誤変換'], ['始めて会', '初めて会', '誤変換'], ['始めての', '初めての', '誤変換'],
+  ['収集がつかな', '収拾がつかな', '誤変換'], ['事態を収集', '事態を収拾', '誤変換'], ['非常事体', '非常事態', '誤変換'], ['心配症', '心配性', '誤変換'],
+  ['肝に命じ', '肝に銘じ', '誤変換'], ['怪我の巧妙', '怪我の功名', '誤変換'], ['後悔先に絶たず', '後悔先に立たず', '誤変換'], ['濡れ手で泡', '濡れ手で粟', '誤変換'],
+  ['始末に終え', '始末に負え', '誤変換'], ['手に終え', '手に負え', '誤変換'], ['府に落ち', '腑に落ち', '誤変換'], ['一同に会', '一堂に会', '誤変換'], ['一見落着', '一件落着', '誤変換'],
+  ['お角違い', 'お門違い', '誤変換'], ['ご多聞に漏れず', 'ご多分に漏れず', '誤変換'], ['身の気がよだ', '身の毛がよだ', '誤変換'], ['見得を張', '見栄を張', '誤変換'], ['目を見晴', '目を見張', '誤変換'],
+  ['不振な人', '不審な人', '誤変換'], ['不振な点', '不審な点', '誤変換'], ['不振に思', '不審に思', '誤変換'], ['不信に思', '不審に思', '誤変換'], ['不振者', '不審者', '誤変換'],
+  ['意義を唱え', '異議を唱え', '誤変換'], ['一環して', '一貫して', '誤変換'], ['一貫として', '一環として', '誤変換'], ['並行線をたど', '平行線をたど', '誤変換'],
+  ['規制ラッシュ', '帰省ラッシュ', '誤変換'], ['帰省緩和', '規制緩和', '誤変換'], ['快心の', '会心の', '誤変換'], ['保健証', '保険証', '誤変換'], ['気転が利', '機転が利', '誤変換'],
+  ['気嫌', '機嫌', '誤変換'], ['一諸に', '一緒に', '誤変換（「諸」と「緒」）'], ['専問', '専門', '誤変換'], ['感概深', '感慨深', '誤変換'], ['遇然', '偶然', '誤変換'], ['講議', '講義', '誤変換'],
+  ['撤底', '徹底', '誤変換'], ['徹退', '撤退', '誤変換'], ['徴妙', '微妙', '誤変換'], ['感無料', '感無量', '誤変換'], ['有頂点', '有頂天', '誤変換'], ['自身満々', '自信満々', '誤変換'], ['自身過剰', '自信過剰', '誤変換'],
+  // --- 慣用句・ことわざの誤用 ---
+  ['声を荒げ', '声を荒らげ', '慣用句の誤用（「荒らげる」）'], ['白羽の矢が当た', '白羽の矢が立', '慣用句の誤用'], ['押して知るべし', '推して知るべし', '慣用句の誤用'],
+  ['火蓋を切って落と', '火蓋を切', '慣用句の誤用（「幕を切って落とす」と混同）'], ['雪辱を晴ら', '雪辱を果た', '慣用句の誤用'], ['照準を当て', '照準を合わせ', '慣用句の誤用'],
+  ['公算が強', '公算が大き', '慣用句の誤用'], ['物議を呼', '物議を醸', '慣用句の誤用'], ['恩を仇で報い', '恩を仇で返', '慣用句の誤用'], ['体調を壊', '体調を崩', '慣用句の誤用'],
+  ['存亡の危機', '存亡の機', '慣用句の誤用'], ['薄皮を剥ぐよう', '薄紙を剥ぐよう', '慣用句の誤用'], ['出る釘は', '出る杭は', 'ことわざの誤用'], ['胸先三寸', '胸三寸', '慣用句の誤用'],
+  ['首をもたげ', '頭をもたげ', '慣用句の誤用'], ['喧々諤々', '侃々諤々', '四字熟語の混同（「喧々囂々」とも）'], ['至れる尽くせり', '至れり尽くせり', '慣用句の誤用'],
+  ['足元を見透かさ', '足元を見', '慣用句の混同'], ['目に余る光景', '目に余る行為', null],
+  // --- 四字熟語の誤変換 ---
+  ['意味慎重', '意味深長', '四字熟語の誤変換'], ['臨気応変', '臨機応変', '四字熟語の誤変換'], ['単純明解', '単純明快', '四字熟語の誤変換'], ['一身同体', '一心同体', '四字熟語の誤変換'],
+  ['心気一転', '心機一転', '四字熟語の誤変換'], ['自我自賛', '自画自賛', '四字熟語の誤変換'], ['厚顔無知', '厚顔無恥', '四字熟語の誤変換'], ['前代未門', '前代未聞', '四字熟語の誤変換'],
+  ['責任転化', '責任転嫁', '四字熟語の誤変換'], ['言語同断', '言語道断', '四字熟語の誤変換'], ['意心伝心', '以心伝心', '四字熟語の誤変換'], ['天真爛慢', '天真爛漫', '四字熟語の誤変換'],
+  ['独断先行', '独断専行', '四字熟語の誤変換'], ['一騎当選', '一騎当千', '四字熟語の誤変換'], ['温古知新', '温故知新', '四字熟語の誤変換'], ['首尾一環', '首尾一貫', '四字熟語の誤変換'],
+  ['晴天白日', '青天白日', '四字熟語の誤変換'], ['完全無決', '完全無欠', '四字熟語の誤変換'], ['時期早尚', '時期尚早', '四字熟語の誤変換'], ['異句同音', '異口同音', '四字熟語の誤変換'],
+  ['千載一偶', '千載一遇', '四字熟語の誤変換'], ['一挙両徳', '一挙両得', '四字熟語の誤変換'], ['大器晩性', '大器晩成', '四字熟語の誤変換'], ['起承転決', '起承転結', '四字熟語の誤変換'],
+  ['不和雷同', '付和雷同', '四字熟語の誤変換'], ['無味感想', '無味乾燥', '四字熟語の誤変換'], ['荒唐無形', '荒唐無稽', '四字熟語の誤変換'], ['玉石混合', '玉石混交', '四字熟語の誤変換'],
+  ['優柔普段', '優柔不断', '四字熟語の誤変換'], ['疑心暗記', '疑心暗鬼', '四字熟語の誤変換'], ['意気統合', '意気投合', '四字熟語の誤変換'], ['七転八起', '七転び八起き', '四字熟語の誤用（「七転八倒」と混同）'],
+  ['二束三門', '二束三文', '四字熟語の誤変換'], ['我田引用', '我田引水', '四字熟語の誤変換'], ['危機一発', '危機一髪', '四字熟語の誤変換'], ['絶対絶命', '絶体絶命', '四字熟語の誤変換'],
+  ['五里夢中', '五里霧中', '四字熟語の誤変換'], ['無我無中', '無我夢中', '四字熟語の誤変換'], ['興味深深', '興味津々', '四字熟語の誤変換'], ['興味深々', '興味津々', '四字熟語の誤変換'], ['短刀直入', '単刀直入', '四字熟語の誤変換']
+].filter(x => x[1] && x[2]);
 // 〜ずらい（〜づらい）は形で判定する
 function checkMisuse(t){
-  const out = [];
+  const out = [], done = new Set();
   for (const [w, fix, note] of MISUSES) {
+    if (done.has(w)) continue; done.add(w);
     let i = t.indexOf(w);
     while (i !== -1) {
       // 「以外と」は「それ以外と」のような正しい使い方もあるので、文頭・読点の後のときだけ
       const next = t[i + w.length] || '';
       if ((w === 'づつ' && next === 'み') || (w === 'とうり' && /[ょゅつ]/.test(next))) { i = t.indexOf(w, i + 1); continue; }
+      if (w === '以外な' && /[らり]/.test(t[i + 3] || '')) { i = t.indexOf(w, i + 1); continue; } // それ以外なら・以外なり
       if (w === '以外と' && i > 0 &&!/[。、「『\n　 ]/.test(t[i - 1])) { i = t.indexOf(w, i + 1); continue; }
       out.push({index:i, length:w.length, msg:`${note}：「${w}」→「${fix}」`, fixText:fix});
       i = t.indexOf(w, i + w.length);
@@ -705,7 +810,7 @@ function applySafeFixes(t, enabledIds){
   return {text:t, count:total};
 }
 
-if (typeof module !== 'undefined') module.exports = {setMemoText, parseMemo, checkMemo, notionJsonToText, htmlToText, formatText, looksDoubleSpaced, RULES, runRule, applySafeFixes};
+if (typeof module !== 'undefined') module.exports = {webHtmlToText, textToNotionBlocks, setMemoText, parseMemo, checkMemo, notionJsonToText, htmlToText, formatText, looksDoubleSpaced, RULES, runRule, applySafeFixes};
 </script>
 
 <script>
@@ -962,6 +1067,13 @@ if (typeof module !== 'undefined') module.exports = {setMemoText, parseMemo, che
       if (types.some(t => /_notion-text-production/.test(t))) msg = 'Notionの改行をそのまま再現して貼り付けました';
       else msg = '改行は整えましたが、Notionの空行は読み取れませんでした（ChromeかEdgeで開くと再現できます）';
     }
+    // 普通のテキストに空行があるとき（＝段落が空行で区切られているページ）だけ、段落として読む。
+    // 1段落＝1行のHTML（Googleドキュメントなど）は従来どおり1行ずつ読む。
+    if (!text.trim() && html && !fromNotion && /\n[ \t　]*\n/.test(normalizeNewlines(plain || ''))) {
+      // pixivなどのWebページからのコピー：段落と改行・空行をそのまま保つ
+      let w = null; try { w = webHtmlToText(html, new DOMParser()); } catch(err) { w = null; }
+      if (w && w.trim()) { text = w; exact = true; msg = /pixiv/i.test(html) || /\[chapter:/.test(w) ? 'pixivの本文の改行・空行をそのまま再現して貼り付けました' : 'ページの改行・空行をそのまま再現して貼り付けました'; }
+    }
     if (!text.trim() && html) {
       try { text = htmlToText(html, new DOMParser()); } catch(err) { text = ''; }
     }
@@ -996,6 +1108,28 @@ if (typeof module !== 'undefined') module.exports = {setMemoText, parseMemo, che
     else if (first) cause += '（' + errText(first) + '）';
     return {ok:false, cause};
   }
+
+  // Notion用にコピー：Notion独自の形式でクリップボードに入れると、空行（空のブロック）まで再現される
+  $('btnCopyNotion').onclick = () => {
+    const text = ta.value;
+    if (!text.trim()) { notify('error', 'コピーできませんでした', {cause: '本文が空です', fix: 'pixivの閲覧ページなどからコピーした本文を入力欄に貼り付けてから押してください。'}); return; }
+    let nb;
+    try { nb = textToNotionBlocks(text); } catch(e) { notify('error', 'コピーできませんでした', {cause: 'Notion用のデータを作れませんでした（' + errText(e) + '）'}); return; }
+    const plainOut = normalizeNewlines(text).replace(/^\n+|\n+$/g, '');
+    let done = false;
+    const onCopy = ev => {
+      ev.preventDefault();
+      ev.clipboardData.setData('text/plain', plainOut);
+      ev.clipboardData.setData('text/_notion-blocks-v3-production', nb.json);
+      done = true;
+    };
+    document.addEventListener('copy', onCopy, true);
+    let ok = false;
+    try { ok = document.execCommand('copy'); } catch(e) {}
+    document.removeEventListener('copy', onCopy, true);
+    if (ok && done) notify('success', 'Notion用にコピーしました！', {detail: `${nb.count}行を、改行・空行を保ったままコピーしました。Notionのページに貼り付けてください（1行が1ブロックになります）。`});
+    else notify('error', 'コピーできませんでした', {cause: 'ブラウザがクリップボードへの書き込みを許可しませんでした', fix: 'Chrome または Edge で開き、ページを再読み込みしてからもう一度お試しください。'});
+  };
 
   $('btnCopy').onclick = async () => {
     const text = ta.value.replace(/\r\n?/g, '\n');
@@ -1057,7 +1191,8 @@ if (typeof module !== 'undefined') module.exports = {setMemoText, parseMemo, che
 
   // ===== チェック結果の表示 =====
   let lastChecked = false, checkTimer = null, lastTotal = 0, lastCheckedAt = '';
-  const scheduleCheck = () => { clearTimeout(checkTimer); checkTimer = setTimeout(runCheck, 600); };
+  // 長い本文（6万字超）は入力のたびの自動再チェックを止め、重くならないようにする（ボタンでのチェックは何文字でも可能）
+  const scheduleCheck = () => { clearTimeout(checkTimer); if (ta.value.length > 60000) return; checkTimer = setTimeout(runCheck, 600); };
 
   function lineStarts(t){ const s = [0]; for (let i = 0; i < t.length; i++) if (t[i] === '\n') s.push(i + 1); return s; }
   function lineOf(starts, idx){ let lo = 0, hi = starts.length - 1; while (lo < hi) { const mid = (lo + hi + 1) >> 1; if (starts[mid] <= idx) lo = mid; else hi = mid - 1; } return lo; }
@@ -1095,7 +1230,7 @@ if (typeof module !== 'undefined') module.exports = {setMemoText, parseMemo, che
     lastTotal = total;
     if (lastChecked) { const d = new Date(); lastCheckedAt = `${d.getHours()}:${String(d.getMinutes()).padStart(2,'0')}:${String(d.getSeconds()).padStart(2,'0')}`; }
     $('summary').textContent = lastChecked ? (total ? `指摘 ${total}件` : '指摘はありません 🎉') : '校正チェック';
-    if (lastChecked) { const tm = document.createElement('span'); tm.className = 'checked-at'; tm.textContent = `${lastCheckedAt} 時点（本文を直すと自動で更新されます）`; $('summary').append(tm); }
+    if (lastChecked) { const tm = document.createElement('span'); tm.className = 'checked-at'; tm.textContent = ta.value.length > 60000 ? `${lastCheckedAt} 時点（長い本文のため、直したあとは「校正チェック」を押して更新してください）` : `${lastCheckedAt} 時点（本文を直すと自動で更新されます）`; $('summary').append(tm); }
     if (!lastChecked) return;
     const hint = document.createElement('div'); hint.className = 'ai-hint';
     hint.textContent = '💡 このチェックは決まった形のものだけを見つける一次チェックです。誤字・脱字・変換ミス・文法の誤りは、仕上げに「🤖 AI校正用にコピー」でAIに確認してもらいましょう（結果の「行」は上の「行へ移動」で探せます）。';
